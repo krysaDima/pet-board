@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+    href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500&family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&display=swap"
+      rel="stylesheet"
+    />
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Счастливый пёсик — пробная версия</title>
+  </head>
+  <body>
+    <div id="root">
+      <p
+        id="boot-hint"
+        style="
+          max-width: 38rem;
+          margin: 2rem auto;
+          padding: 1rem 1.25rem;
+          font-family: system-ui, sans-serif;
+          font-size: 15px;
+          line-height: 1.55;
+          color: #292524;
+          background: #fffbeb;
+          border: 1px solid #fcd34d;
+          border-radius: 12px;
+        "
+      >
+        <strong>Загрузка приложения…</strong><br />
+        Подождите 2–3 секунды. Если этот блок не исчез, читайте текст ниже — он сменится автоматически.
+      </p>
+    </div>
+    <!-- Сразу проверяем открытие с диска (file://) — тогда React никогда не загрузится. -->
+    <script>
+      (function () {
+        if (location.protocol === 'file:') {
+          var r = document.getElementById('root');
+          if (!r) return;
+          r.innerHTML =
+            '<div style="max-width:40rem;margin:2rem auto;padding:1.5rem;font-family:system-ui,sans-serif;font-size:16px;line-height:1.55;color:#1c1917;background:#fef2f2;border:2px solid #f87171;border-radius:12px">' +
+            '<strong style="font-size:18px">Сайт открыт как файл с диска</strong><br><br>' +
+            'В адресной строке сейчас что-то вроде <code>file:///C:/...</code> — так <strong>нельзя</strong>, поэтому экран «висит».<br><br>' +
+            '<strong>Что сделать:</strong><ol style="margin:12px 0 0 20px;padding:0">' +
+            '<li style="margin-bottom:8px">Закройте эту вкладку.</li>' +
+            '<li style="margin-bottom:8px">Откройте папку <code>pet-board</code> и дважды щёлкните <strong>запуск.bat</strong> (или в терминале выполните <code>npm run dev</code>).</li>' +
+            '<li style="margin-bottom:8px">Дождитесь чёрного окна и откройте в браузере только этот адрес: <strong>http://localhost:5173</strong> (в конце цифра <strong>3</strong>).</li>' +
+            '</ol></div>';
+        }
+      })();
+    </script>
+    <!-- Если не file://, а подсказка всё ещё на месте — модуль не выполнился (сервер не запущен или ошибка в консоли). -->
+    <script>
+      (function () {
+        setTimeout(function () {
+          var hint = document.getElementById('boot-hint');
+          if (!hint) return;
+          if (location.protocol === 'file:') return;
+          hint.outerHTML =
+            '<div style="max-width:40rem;margin:2rem auto;padding:1.5rem;font-family:system-ui,sans-serif;font-size:15px;line-height:1.55;color:#1c1917;background:#fff7ed;border:2px solid #fb923c;border-radius:12px">' +
+            '<strong style="font-size:17px">Приложение не запустилось</strong><br><br>' +
+            'Обычно так бывает, если <strong>не запущен сервер разработки</strong> или открыт не тот адрес.<br><br>' +
+            '<strong>Проверьте по шагам:</strong><ol style="margin:12px 0 0 20px;padding:0">' +
+            '<li style="margin-bottom:8px">Чёрное окно с командой <code>npm run dev</code> должно быть открыто и без красных ошибок (его не закрывайте).</li>' +
+            '<li style="margin-bottom:8px">В браузере вручную введите: <strong>http://localhost:5173</strong> (порт <strong>5173</strong>, не 517).</li>' +
+            '<li style="margin-bottom:8px">Нажмите <strong>F12</strong> → вкладка «Консоль». Если есть красный текст — скопируйте или сфотографируйте.</li>' +
+            '</ol></div>';
+        }, 5000);
+      })();
+    </script>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

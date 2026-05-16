@@ -1,0 +1,61 @@
+# Репозиторий: https://github.com/krysaDima/pet-board
+# После деплоя Pages: https://krysaDima.github.io/pet-board/
+# Сборка и публикация на GitHub Pages (ветка main).
+# 1. Репозиторий → Settings → Pages → Source: GitHub Actions.
+# 2. Settings → Secrets and variables → Actions → Variables: добавьте VITE_API_URL (URL бэкенда с HTTPS).
+# 3. В application.yml бэкенда в cors уже добавлен origin https://krysaDima.github.io
+# 4. Содержимое pet-board должно быть корнем репозитория (или задайте working-directory в job).
+# 5. Сайт user.github.io из репо username.github.io: в env сборки замените GITHUB_PAGES_BASE на «/».
+
+name: Deploy frontend to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Build
+        env:
+          # Имя репозрания → сайт https://<user>.github.io/<repo>/
+          GITHUB_PAGES_BASE: /${{ github.event.repository.name }}/
+          VITE_API_URL: ${{ vars.VITE_API_URL }}
+          VITE_USE_MOCKS: 'false'
+        run: npm run build
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v4

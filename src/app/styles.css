@@ -1,0 +1,50 @@
+@import 'tailwindcss';
+
+/* Безопасные отступы под «чёлку» и нижнюю полосу iPhone */
+@layer base {
+  html {
+    overflow-x: clip;
+  }
+  #root {
+    min-height: 100dvh;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Тёплая палитра под тему «животные / дом» */
+@theme {
+  --font-sans: 'DM Sans', ui-sans-serif, system-ui, sans-serif;
+  --font-display: 'Cormorant Garamond', 'Times New Roman', serif;
+  --color-brand-50: oklch(0.97 0.02 95);
+  --color-brand-100: oklch(0.93 0.04 95);
+  --color-brand-500: oklch(0.62 0.12 55);
+  --color-brand-700: oklch(0.45 0.1 55);
+  --color-brand-900: oklch(0.28 0.06 55);
+}
+
+/* Фон: мягкий градиент + «пятно» тепла — без перегруза */
+body {
+  @apply min-h-[100dvh] font-sans text-stone-900 antialiased;
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+  background-color: #faf7f2;
+  background-image:
+    radial-gradient(ellipse 100% 60% at 50% -15%, rgba(251, 191, 36, 0.22), transparent 55%),
+    radial-gradient(ellipse 70% 45% at 100% 10%, rgba(231, 229, 228, 0.55), transparent 50%),
+    radial-gradient(ellipse 55% 40% at 0% 80%, rgba(254, 243, 199, 0.35), transparent 45%);
+  background-attachment: fixed;
+}
+
+::selection {
+  background-color: rgba(251, 191, 36, 0.35);
+  color: #1c1917;
+}
