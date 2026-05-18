@@ -1,0 +1,18 @@
+Домен happyttest.ru → VPS (фронт nginx + API в Docker)
+=========================================================
+
+1) DNS (панель, где обслуживается домен — регистратор или Beget «Управление DNS»)
+   - Запись A:  @  →  62.113.110.184  (если поле «имя» пустое или @)
+   - Запись A:  www  →  62.113.110.184
+   Подождите 5–60 минут. Проверка на VPS:  dig +short happyttest.ru
+
+2) Nginx
+   Используйте файл deploy/nginx-happyttest.ru.conf из репозитория pet-board.
+
+3) HTTPS
+   certbot --nginx -d happyttest.ru -d www.happyttest.ru
+
+4) Docker API (пример CORS; после HTTPS можно оставить только https:// в списке)
+   -e CORS_ALLOWED_ORIGINS='https://happyttest.ru,https://www.happyttest.ru,https://krysaDima.github.io,http://localhost:5173'
+
+5) Открывать сайт:  https://happyttest.ru
