@@ -33,16 +33,15 @@ export function getApiBaseUrl(): string {
   }
   raw = raw.replace(/\/+$/, '');
   /*
-   * На GitHub Pages нельзя ходить на localhost:8080 — это машина пользователя, не ваш ПК.
-   * Прод-сборка обязана получить VITE_API_URL в CI (см. deploy-github-pages.yml).
+   * DEV: пустой URL → localhost:8080.
+   * PROD пустой URL → тот же origin, что и страница (nginx проксирует /api на Spring на VPS).
+   * PROD с VITE_API_URL → отдельный API (GitHub Pages и т.п.) — см. .github/workflows/deploy-github-pages.yml.
    */
   if (!raw) {
     if (import.meta.env.DEV) {
       raw = 'http://localhost:8080';
     } else {
-      console.error(
-        '[pet-board] VITE_API_URL не задан при сборке: задайте URL публичного API в GitHub → Variables/Secrets.',
-      );
+      return '';
     }
   }
   return raw;
