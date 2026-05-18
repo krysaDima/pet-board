@@ -2,12 +2,18 @@
 # После деплоя Pages: https://krysaDima.github.io/pet-board/
 # Сборка и публикация на GitHub Pages (ветка main).
 #
-# Если deploy-pages падает с HttpError 404 — почти всегда не включены Pages под Actions:
-#   Settings → Pages → Build and deployment → Source → выберите «GitHub Actions»
-#   (не «Deploy from a branch»). Сохраните, затем перезапустите workflow.
+# Ошибка в шаге «Setup Pages» (configure-pages): Get Pages site failed / HttpError Not Found —
+#   в репозитории ещё не включён GitHub Pages под Actions. Сделайте один раз:
+#   Settings → Pages → Build and deployment → Source → «GitHub Actions» (не «Deploy from a branch»).
+#   Сохраните, откройте Actions и заново запустите workflow (Re-run).
+#   Параметр enablement: true у configure-pages требует PAT с правами repo/Pages, не GITHUB_TOKEN.
+# Если deploy-pages падает с HttpError 404 после успешной сборки — проверьте то же самое (источник Actions).
 # Приватный репозиторий: GitHub Pages для private ограничены тарифом GitHub (см. документацию).
 #
-# 1. Settings → Secrets and variables → Actions → Variables: добавьте VITE_API_URL (URL бэкенда с HTTPS).
+# 1. Settings → Secrets and variables → Actions → Repository variables:
+#    VITE_API_URL = публичный HTTPS URL API (без /api/v1). Локальный ПК с сайта не достучится —
+#    поднимите API на хостинге (Render/Fly/Railway/VPS) или временно Cloudflare Tunnel / ngrok и вставьте URL.
+#    При необходимости тот же ключ можно задать как Repository secret.
 # 2. В application.yml бэкенда в cors уже добавлен origin https://krysaDima.github.io
 # 3. Содержимое pet-board должно быть корнем репозитория (или задайте working-directory в job).
 # 4. Сайт user.github.io из репо username.github.io: в env сборки замените GITHUB_PAGES_BASE на «/».
@@ -47,11 +53,26 @@ jobs:
       - name: Setup Pages
         uses: actions/configure-pages@v5
 
+      - name: Require public API URL for build
+        env:
+          VITE_API_URL: ${{ vars.VITE_API_URL || secrets.VITE_API_URL }}
+        run: |
+          if [ -z "$VITE_API_URL" ]; then
+            echo "::error::Задайте VITE_API_URL (HTTPS URL вашего API, не localhost) в Settings → Secrets and variables → Actions → Variables или Secrets."
+            exit 1
+          fi
+          case "$VITE_API_URL" in
+            http://localhost*|http://127.0.0.1*)
+              echo "::error::VITE_API_URL указывает на localhost — с GitHub Pages такой бэкенд недоступен. Используйте публичный URL или туннель."
+              exit 1
+              ;;
+          esac
+
       - name: Build
         env:
           # Имя репозитория → сайт https://<user>.github.io/<repo>/
           GITHUB_PAGES_BASE: /${{ github.event.repository.name }}/
-          VITE_API_URL: ${{ vars.VITE_API_URL }}
+          VITE_API_URL: ${{ vars.VITE_API_URL || secrets.VITE_API_URL }}
           VITE_USE_MOCKS: 'false'
         run: npm run build
 

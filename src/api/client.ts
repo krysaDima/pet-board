@@ -32,8 +32,19 @@ export function getApiBaseUrl(): string {
     raw = raw.replace(/\/api\/v1$/i, '');
   }
   raw = raw.replace(/\/+$/, '');
-  /* Совпадает с дефолтом Spring Boot (server.port 8080), чтобы относительные медиа-URL не били в «пустой» 8081. */
-  if (!raw) raw = 'http://localhost:8080';
+  /*
+   * На GitHub Pages нельзя ходить на localhost:8080 — это машина пользователя, не ваш ПК.
+   * Прод-сборка обязана получить VITE_API_URL в CI (см. deploy-github-pages.yml).
+   */
+  if (!raw) {
+    if (import.meta.env.DEV) {
+      raw = 'http://localhost:8080';
+    } else {
+      console.error(
+        '[pet-board] VITE_API_URL не задан при сборке: задайте URL публичного API в GitHub → Variables/Secrets.',
+      );
+    }
+  }
   return raw;
 }
 
