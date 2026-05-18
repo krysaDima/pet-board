@@ -1,7 +1,5 @@
-# Пример для одного VPS: статика (npm run build:vps) + прокси API на Docker с Spring.
-# 1) Подставьте server_name и root (папка с index.html из dist).
-# 2) certbot --nginx -d YOUR_DOMAIN (HTTPS).
-# 3) На бэкенде в CORS_ALLOWED_ORIGINS добавьте https://YOUR_DOMAIN
+# Универсальный шаблон. Готовый конфиг для Beget: nginx-krysadq6.beget.tech.conf
+# 1) server_name и root; 2) certbot --nginx -d ВАШ_ДОМЕН; 3) CORS на бэке под ваш origin
 
 server {
     listen 80;

@@ -1,0 +1,48 @@
+Развёртывание pet-board + pet-service-api на VPS с доменом krysadq6.beget.tech
+================================================================================
+
+1) DNS (панель Beget)
+   - Поддомен: krysadq6.beget.tech
+   - Тип A → укажите публичный IP вашего VPS (тот же, куда вы заходите по SSH).
+   - Подождите распространения (обычно от нескольких минут до часа).
+   - Проверка с ПК: ping krysadq6.beget.tech (должен ответить ваш IP).
+
+2) Фаервол на VPS (если включён ufw)
+   sudo ufw allow OpenSSH
+   sudo ufw allow 'Nginx Full'
+   sudo ufw enable
+
+3) Docker: API только с localhost (не светить 8080 в интернет)
+   docker run -d --name pet-api --restart unless-stopped \
+     -p 127.0.0.1:8080:8080 \
+     -e SPRING_PROFILE=prod \
+     -e DB_HOST=... -e DB_PORT=5432 -e DB_NAME=... -e DB_USER=... -e DB_PASSWORD=... \
+     -e JWT_SECRET=... \
+     -e CORS_ALLOWED_ORIGINS=https://krysadq6.beget.tech,http://krysadq6.beget.tech,http://localhost:5173,https://krysaDima.github.io \
+     pet-api
+
+   Проверка только на сервере: curl -s http://127.0.0.1:8080/actuator/health
+
+4) Фронт (на вашем ПК или на сервере, в каталоге pet-board)
+   - Уберите VITE_API_URL из .env или оставьте пустым для same-origin.
+   - Не задавайте GITHUB_PAGES_BASE (base будет /).
+   npm ci
+   npm run build:vps
+
+5) Nginx на VPS
+   sudo apt install -y nginx
+   Скопируйте deploy/nginx-krysadq6.beget.tech.conf в sites-available (см. комментарии в файле).
+   Залейте dist в /var/www/pet-board/
+   sudo nginx -t && sudo systemctl reload nginx
+
+6) HTTPS
+   sudo apt install -y certbot python3-certbot-nginx
+   sudo certbot --nginx -d krysadq6.beget.tech
+
+7) После включения HTTPS
+   В переменных Docker для API оставьте CORS с https://krysadq6.beget.tech (http можно убрать).
+   Сайт открывать только по https://krysadq6.beget.tech
+
+Примечания
+- В коде в application.yml уже добавлены origins для krysadq6.beget.tech; при необходимости переопределяйте CORS_ALLOWED_ORIGINS.
+- Если браузер редиректит или показывает чужую страницу — проверьте A-запись и что nginx слушает этот server_name.
