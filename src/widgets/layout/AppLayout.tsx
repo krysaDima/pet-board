@@ -1,9 +1,11 @@
 import { useLayoutEffect, useRef } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import gsap from 'gsap';
 import { Link, NavLink, Outlet } from 'react-router';
+import { fetchMyProfile, isApiMocksMode } from '@/api/listingsApi';
 import { ROUTES } from '@/shared/config/routes';
+import { queryKeys } from '@/shared/lib/queryKeys';
 import { useAuth } from '@/app/auth/AuthContext';
-import { MOCK_CURRENT_USER_ID, mockProfiles } from '@/api/mocks/data';
 import { Avatar } from '@/shared/ui/Avatar';
 
 function navClass({ isActive }: { isActive: boolean }) {
@@ -38,8 +40,13 @@ function UserCircleIcon({ className }: { className?: string }) {
 /** Общая оболочка: шапка и контент. Лёгкий вход через GSAP. */
 export function AppLayout() {
   const shellRef = useRef<HTMLDivElement>(null);
-  const { isAuthenticated, logout } = useAuth();
-  const me = mockProfiles[MOCK_CURRENT_USER_ID];
+  const { isAuthenticated, logout, userId } = useAuth();
+  const myProfileQuery = useQuery({
+    queryKey: queryKeys.myProfile(userId ?? ''),
+    queryFn: fetchMyProfile,
+    enabled: isAuthenticated && Boolean(userId),
+  });
+  const me = myProfileQuery.data;
 
   useLayoutEffect(() => {
     const root = shellRef.current;
@@ -114,12 +121,12 @@ export function AppLayout() {
             {isAuthenticated ? (
               <div className="flex shrink-0 items-center gap-2 pl-1 sm:pl-0">
                 <Link
-                  to={ROUTES.profile(MOCK_CURRENT_USER_ID)}
+                  to={ROUTES.myProfile}
                   className="flex touch-manipulation items-center gap-2 rounded-xl py-1 pr-1 pl-1 ring-1 ring-transparent transition hover:bg-amber-50/80 hover:ring-amber-200/60"
                   title="Мой профиль"
                 >
                   {me ? (
-                    <Avatar src={me.avatarUrl} alt={me.displayName} size="sm" />
+                    <Avatar src={me.avatarUrl} alt={me.displayName} size="sm" mediaAuthFallback={!isApiMocksMode()} />
                   ) : (
                     <span className="flex h-9 w-9 items-center justify-center rounded-2xl bg-stone-200 text-xs font-bold text-stone-600">
                       Я

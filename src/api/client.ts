@@ -7,25 +7,65 @@ import type { ProblemDetail, RefreshRequest, AuthResponse, StoredSession } from 
 
 const API_PREFIX = '/api/v1';
 const SESSION_KEY = 'pet-board-session';
+/** Сохранять сессию между перезапусками браузера (`localStorage`), иначе только до закрытия вкладки (`sessionStorage`). */
+const SESSION_REMEMBER_KEY = 'pet-board-remember';
 
-export function getApiBaseUrl(): string {
-  return import.meta.env.VITE_API_URL ?? 'http://localhost:8081';
+function getSessionPersistence(): boolean {
+  try {
+    const f = localStorage.getItem(SESSION_REMEMBER_KEY);
+    if (f === '0') return false;
+    if (f === '1') return true;
+    if (localStorage.getItem(SESSION_KEY) && !sessionStorage.getItem(SESSION_KEY)) return true;
+    if (sessionStorage.getItem(SESSION_KEY)) return false;
+    return true;
+  } catch {
+    return true;
+  }
 }
 
-/** Чтение сессии из localStorage */
+export function getApiBaseUrl(): string {
+  /* Пустая строка в .env не подпадает под ?? — иначе origin медиа «прилипает» к фронту (5173) и картинки 404. */
+  let raw = String(import.meta.env.VITE_API_URL ?? '').trim();
+  raw = raw.replace(/\/+$/, '');
+  /* Частая ошибка: в .env указали уже с префиксом /api/v1 — убираем, клиент дописывает сам. */
+  if (/\/api\/v1$/i.test(raw)) {
+    raw = raw.replace(/\/api\/v1$/i, '');
+  }
+  raw = raw.replace(/\/+$/, '');
+  /* Совпадает с дефолтом Spring Boot (server.port 8080), чтобы относительные медиа-URL не били в «пустой» 8081. */
+  if (!raw) raw = 'http://localhost:8080';
+  return raw;
+}
+
+/** Чтение сессии: сначала стойкий вход, затем сессия вкладки. */
 export function getStoredSession(): StoredSession | null {
   try {
-    const raw = localStorage.getItem(SESSION_KEY);
-    return raw ? (JSON.parse(raw) as StoredSession) : null;
+    const localRaw = localStorage.getItem(SESSION_KEY);
+    if (localRaw) return JSON.parse(localRaw) as StoredSession;
+    const tabRaw = sessionStorage.getItem(SESSION_KEY);
+    if (tabRaw) return JSON.parse(tabRaw) as StoredSession;
+    return null;
   } catch {
     return null;
   }
 }
 
-/** Сохранение сессии */
-export function saveSession(session: StoredSession): void {
+/**
+ * Сохранение сессии.
+ * @param persist — `true`: между сеансами браузера; `false`: до закрытия вкладки.
+ */
+export function saveSession(session: StoredSession, persist?: boolean): void {
+  const p = persist === undefined ? getSessionPersistence() : persist;
   try {
-    localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+    localStorage.setItem(SESSION_REMEMBER_KEY, p ? '1' : '0');
+    const payload = JSON.stringify(session);
+    if (p) {
+      localStorage.setItem(SESSION_KEY, payload);
+      sessionStorage.removeItem(SESSION_KEY);
+    } else {
+      sessionStorage.setItem(SESSION_KEY, payload);
+      localStorage.removeItem(SESSION_KEY);
+    }
   } catch {
     /* приватный режим */
   }
@@ -35,6 +75,8 @@ export function saveSession(session: StoredSession): void {
 export function clearSession(): void {
   try {
     localStorage.removeItem(SESSION_KEY);
+    sessionStorage.removeItem(SESSION_KEY);
+    localStorage.removeItem(SESSION_REMEMBER_KEY);
   } catch {
     /* */
   }
@@ -91,7 +133,7 @@ async function refreshAccessToken(refreshToken: string): Promise<AuthResponse> {
 }
 
 /** Получение актуального access-токена (с автообновлением) */
-async function getValidAccessToken(): Promise<string | null> {
+export async function getValidAccessToken(): Promise<string | null> {
   const session = getStoredSession();
   if (!session) return null;
 
@@ -186,7 +228,61 @@ export function apiPut<T>(path: string, body: unknown): Promise<T> {
   return apiFetch<T>(path, { method: 'PUT', body });
 }
 
-/** DELETE запрос */
-export function apiDelete<T>(path: string): Promise<T> {
-  return apiFetch<T>(path, { method: 'DELETE' });
+/** DELETE запрос (опциональное JSON-тело — например `DELETE /me/profile/gallery`). */
+export function apiDelete<T>(path: string, body?: unknown): Promise<T> {
+  return apiFetch<T>(path, {
+    method: 'DELETE',
+    ...(body !== undefined ? { body } : {}),
+  });
+}
+
+/**
+ * POST multipart (без JSON Content-Type; boundary выставляет браузер).
+ * Защищённые эндпоинты получают Bearer при наличии сессии.
+ */
+export async function apiPostMultipart<T>(path: string, formData: FormData, auth = true): Promise<T | undefined> {
+  const headers: Record<string, string> = {};
+  if (auth) {
+    const token = await getValidAccessToken();
+    if (token) headers.Authorization = `Bearer ${token}`;
+  }
+
+  const res = await fetch(`${getApiBaseUrl()}${API_PREFIX}${path}`, {
+    method: 'POST',
+    headers,
+    body: formData,
+  });
+
+  const rawText = await res.text();
+
+  if (!res.ok) {
+    let problem: ProblemDetail;
+    try {
+      problem = rawText ? (JSON.parse(rawText) as ProblemDetail) : { type: 'about:blank', title: '', detail: '', instance: path, status: res.status };
+    } catch {
+      problem = {
+        type: 'about:blank',
+        title: 'Ошибка сервера',
+        status: res.status,
+        detail: rawText?.trim() ? rawText.trim().slice(0, 400) : `HTTP ${res.status}`,
+        instance: path,
+      };
+    }
+    if (!problem.detail && problem.title) problem = { ...problem, detail: problem.title };
+    throw new ApiError(res.status, problem);
+  }
+
+  if (!rawText.trim()) return undefined;
+
+  try {
+    return JSON.parse(rawText) as T;
+  } catch {
+    throw new ApiError(res.status, {
+      type: 'about:blank',
+      title: 'Некорректный ответ сервера',
+      status: res.status,
+      detail: `После загрузки файла ожидался JSON. Проверьте POST ${API_PREFIX}${path} и переменную VITE_API_URL (origin без /api/v1).`,
+      instance: path,
+    });
+  }
 }

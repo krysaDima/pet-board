@@ -1,11 +1,16 @@
 # Репозиторий: https://github.com/krysaDima/pet-board
 # После деплоя Pages: https://krysaDima.github.io/pet-board/
 # Сборка и публикация на GitHub Pages (ветка main).
-# 1. Репозиторий → Settings → Pages → Source: GitHub Actions.
-# 2. Settings → Secrets and variables → Actions → Variables: добавьте VITE_API_URL (URL бэкенда с HTTPS).
-# 3. В application.yml бэкенда в cors уже добавлен origin https://krysaDima.github.io
-# 4. Содержимое pet-board должно быть корнем репозитория (или задайте working-directory в job).
-# 5. Сайт user.github.io из репо username.github.io: в env сборки замените GITHUB_PAGES_BASE на «/».
+#
+# Если deploy-pages падает с HttpError 404 — почти всегда не включены Pages под Actions:
+#   Settings → Pages → Build and deployment → Source → выберите «GitHub Actions»
+#   (не «Deploy from a branch»). Сохраните, затем перезапустите workflow.
+# Приватный репозиторий: GitHub Pages для private ограничены тарифом GitHub (см. документацию).
+#
+# 1. Settings → Secrets and variables → Actions → Variables: добавьте VITE_API_URL (URL бэкенда с HTTPS).
+# 2. В application.yml бэкенда в cors уже добавлен origin https://krysaDima.github.io
+# 3. Содержимое pet-board должно быть корнем репозитория (или задайте working-directory в job).
+# 4. Сайт user.github.io из репо username.github.io: в env сборки замените GITHUB_PAGES_BASE на «/».
 
 name: Deploy frontend to GitHub Pages
 
@@ -20,8 +25,8 @@ permissions:
   id-token: write
 
 concurrency:
-  group: github-pages
-  cancel-in-progress: true
+  group: pages
+  cancel-in-progress: false
 
 jobs:
   build:
@@ -38,9 +43,13 @@ jobs:
       - name: Install
         run: npm ci
 
+      # Регистрирует сайт Pages под GitHub Actions (рекомендуется перед upload-pages-artifact).
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
       - name: Build
         env:
-          # Имя репозрания → сайт https://<user>.github.io/<repo>/
+          # Имя репозитория → сайт https://<user>.github.io/<repo>/
           GITHUB_PAGES_BASE: /${{ github.event.repository.name }}/
           VITE_API_URL: ${{ vars.VITE_API_URL }}
           VITE_USE_MOCKS: 'false'
@@ -55,7 +64,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: github-pages
-      url: ${{ steps.deploy.outputs.page_url }}
+      url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - id: deploy
-        uses: actions/deploy-pages@v4
+      - id: deployment
+        uses: actions/deploy-pages@v5

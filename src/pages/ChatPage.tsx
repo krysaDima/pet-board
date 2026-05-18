@@ -1,8 +1,9 @@
 import { useMemo, useState, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router';
 import { ROUTES } from '@/shared/config/routes';
-import { MOCK_CURRENT_USER_ID, mockProfiles } from '@/api/mocks/data';
+import { mockProfiles } from '@/api/mocks/data';
 import { useChatStore } from '@/app/chat/ChatProvider';
+import { useAuth } from '@/app/auth/AuthContext';
 import { Button } from '@/shared/ui/Button';
 import { Card } from '@/shared/ui/Card';
 import { Avatar } from '@/shared/ui/Avatar';
@@ -10,24 +11,25 @@ import { Avatar } from '@/shared/ui/Avatar';
 /** Экран переписки: сообщения в памяти, отправка без сервера. Адаптив под мобильные. */
 export function ChatPage() {
   const { chatId } = useParams<{ chatId: string }>();
+  const { userId } = useAuth();
   const { getThread, sendMessage } = useChatStore();
   const [draft, setDraft] = useState('');
 
   const thread = chatId ? getThread(chatId) : undefined;
 
   const title = useMemo(() => {
-    if (!thread) return 'Чат';
-    const otherId = thread.participantIds.find((id) => id !== MOCK_CURRENT_USER_ID);
+    if (!thread || !userId) return 'Чат';
+    const otherId = thread.participantIds.find((id) => id !== userId);
     if (!otherId) return 'Чат';
     return mockProfiles[otherId]?.displayName ?? otherId;
-  }, [thread]);
+  }, [thread, userId]);
 
   const otherAvatar = useMemo(() => {
-    if (!thread) return undefined;
-    const otherId = thread.participantIds.find((id) => id !== MOCK_CURRENT_USER_ID);
+    if (!thread || !userId) return undefined;
+    const otherId = thread.participantIds.find((id) => id !== userId);
     if (!otherId) return undefined;
     return mockProfiles[otherId]?.avatarUrl;
-  }, [thread]);
+  }, [thread, userId]);
 
   const onSubmit = (e: FormEvent) => {
     e.preventDefault();
@@ -72,7 +74,7 @@ export function ChatPage() {
             <li className="text-center text-sm text-stone-500">Напишите первое сообщение.</li>
           ) : (
             thread.messages.map((m) => {
-              const mine = m.senderId === MOCK_CURRENT_USER_ID;
+              const mine = userId != null && m.senderId === userId;
               return (
                 <li
                   key={m.id}

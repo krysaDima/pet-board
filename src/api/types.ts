@@ -70,32 +70,55 @@ export type ListingsQueryParams = {
 /** Тип объявления с бэкенда (UPPER_CASE) */
 export type ListingKindApi = 'OFFER_SITTER' | 'NEED_SITTER';
 
-/** Объявление с API */
-export type ListingDto = {
+/** Объявление с API — устаревающее имя страницы; для совместимости оставлено как алиас сырого ответа. */
+export type ListingDto = ListingDetailDto;
+
+/** Статус объявления (жизненный цикл модерации) */
+export type ListingStatusApi = 'DRAFT' | 'PENDING_REVIEW' | 'PUBLISHED' | 'REJECTED' | 'ARCHIVED' | 'EXPIRED';
+
+/** Элемент страницы публичной ленты `GET /listings` */
+export type ListingShortDto = {
   id: string;
+  kind: ListingKindApi;
+  title: string;
+  city: string;
+  pricePerDay?: number | string | null;
+  coverUrl: string;
+  status: ListingStatusApi;
   authorId: string;
+  authorName: string;
+  authorAvatarUrl?: string | null;
+  authorRating?: number | string | null;
+  createdAt: string;
+};
+
+/** Полное объявление `GET /listings/{id}` */
+export type ListingDetailDto = {
+  id: string;
   kind: ListingKindApi;
   title: string;
   description: string;
   city: string;
-  priceRubPerDay?: number;
+  pricePerDay?: number | string | null;
   periodText: string;
-  coverImageUrl: string;
-  petId?: string;
+  coverUrl: string;
+  status: ListingStatusApi;
+  author: UserProfileDto;
+  pet?: PetCardDto | null;
   createdAt: string;
-  updatedAt: string;
 };
 
-/** Профиль пользователя с API */
+/** Профиль пользователя с API (`UserProfileResponse`) */
 export type UserProfileDto = {
   id: string;
-  displayName: string;
-  avatarUrl: string;
-  bio: string;
-  galleryUrls: string[];
+  displayName?: string | null;
+  avatarUrl?: string | null;
+  bio?: string | null;
+  galleryUrls?: string[] | null;
   role: UserRole;
-  ratingAvg: number;
-  reviewCount: number;
+  ratingAvg?: number | string | null;
+  reviewCount?: number | null;
+  createdAt?: string;
 };
 
 /** Отзыв с API */
@@ -113,13 +136,14 @@ export type PetCardDto = {
   id: string;
   ownerId: string;
   name: string;
-  species: string;
-  avatarUrl: string;
-  description: string;
-  habits: string;
-  vaccinations: string;
-  allergies: string;
-  vetNotes: string;
+  species?: string | null;
+  avatarUrl?: string | null;
+  description?: string | null;
+  habits?: string | null;
+  vaccinations?: string | null;
+  allergies?: string | null;
+  vetNotes?: string | null;
+  createdAt?: string;
 };
 
 /** Данные сессии для хранения в localStorage */
@@ -130,3 +154,38 @@ export type StoredSession = {
   accessTokenExpiresAt: number;
   refreshTokenExpiresAt: number;
 };
+
+/** `PUT /me/profile` — поля опциональны, отправляйте только изменяемые. */
+export type UpdateProfileBody = Partial<{
+  displayName: string;
+  avatarUrl: string;
+  bio: string;
+  galleryUrls: string[];
+  role: UserRole;
+}>;
+
+export type CreatePetBody = {
+  name: string;
+  species?: string;
+  avatarUrl?: string;
+  description?: string;
+  habits?: string;
+  vaccinations?: string;
+  allergies?: string;
+  vetNotes?: string;
+};
+
+export type UpdatePetBody = Partial<CreatePetBody>;
+
+export type CreateListingBody = {
+  kind: ListingKindApi;
+  title: string;
+  description?: string;
+  city?: string;
+  pricePerDay?: number;
+  periodText?: string;
+  coverUrl?: string;
+  petId?: string;
+};
+
+export type UpdateListingBody = Partial<Omit<CreateListingBody, 'kind'>>;

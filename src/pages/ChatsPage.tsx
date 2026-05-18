@@ -1,22 +1,26 @@
 import { Link } from 'react-router';
 import { ROUTES } from '@/shared/config/routes';
-import { MOCK_CURRENT_USER_ID, mockProfiles } from '@/api/mocks/data';
+import { mockProfiles } from '@/api/mocks/data';
 import { useChatStore } from '@/app/chat/ChatProvider';
+import { useAuth } from '@/app/auth/AuthContext';
 import { Card } from '@/shared/ui/Card';
 import { Avatar } from '@/shared/ui/Avatar';
 
 /** Список чатов (демо: в памяти + начальные из моков). */
 export function ChatsPage() {
   const { threads } = useChatStore();
+  const { userId } = useAuth();
 
   function titleFor(thread: { participantIds: string[] }): string {
-    const otherId = thread.participantIds.find((id) => id !== MOCK_CURRENT_USER_ID);
+    if (!userId) return 'Чат';
+    const otherId = thread.participantIds.find((id) => id !== userId);
     if (!otherId) return 'Чат';
     return mockProfiles[otherId]?.displayName ?? otherId;
   }
 
   function avatarFor(thread: { participantIds: string[] }): string | undefined {
-    const otherId = thread.participantIds.find((id) => id !== MOCK_CURRENT_USER_ID);
+    if (!userId) return undefined;
+    const otherId = thread.participantIds.find((id) => id !== userId);
     if (!otherId) return undefined;
     return mockProfiles[otherId]?.avatarUrl;
   }

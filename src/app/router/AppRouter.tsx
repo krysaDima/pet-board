@@ -1,6 +1,6 @@
 import { Route, Routes } from 'react-router';
 import { AppLayout } from '@/widgets/layout/AppLayout';
-import { ROUTE_SEGMENTS } from '@/shared/config/routes';
+import { ROUTES, ROUTE_SEGMENTS } from '@/shared/config/routes';
 import { RequireAuth } from '@/app/auth/RequireAuth';
 import { MainHubPage } from '@/pages/MainHubPage';
 import { BoardListPage } from '@/pages/BoardListPage';
@@ -25,6 +25,14 @@ export function AppRouter() {
         <Route path={ROUTE_SEGMENTS.petServices} element={<PetServicesPlaceholderPage />} />
         <Route path={ROUTE_SEGMENTS.auth} element={<AuthPage />} />
         <Route path={`${ROUTE_SEGMENTS.listing}/:listingId`} element={<ListingPage />} />
+        <Route
+          path={ROUTE_SEGMENTS.profile}
+          element={
+            <RequireAuth redirectTo={ROUTES.auth} rememberRedirect>
+              <ProfilePage />
+            </RequireAuth>
+          }
+        />
         <Route path={`${ROUTE_SEGMENTS.profile}/:userId`} element={<ProfilePage />} />
         <Route
           path={ROUTE_SEGMENTS.chats}

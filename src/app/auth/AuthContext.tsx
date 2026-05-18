@@ -9,14 +9,15 @@ import {
   isRefreshTokenExpired,
   ApiError,
 } from '@/api/client';
+import { MOCK_CURRENT_USER_ID } from '@/api/mocks/data';
 
 type AuthContextValue = {
   isAuthenticated: boolean;
   userId: string | null;
   isLoading: boolean;
   error: string | null;
-  register: (data: RegisterRequest) => Promise<void>;
-  login: (data: LoginRequest) => Promise<void>;
+  register: (data: RegisterRequest, rememberMe?: boolean) => Promise<void>;
+  login: (data: LoginRequest, rememberMe?: boolean) => Promise<void>;
   logout: () => void;
   clearError: () => void;
   demoLogin: () => void;
@@ -46,20 +47,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const isAuthenticated = session !== null;
   const userId = session?.userId ?? null;
 
-  const handleAuthResponse = useCallback((res: AuthResponse) => {
+  const handleAuthResponse = useCallback((res: AuthResponse, rememberMe = true) => {
     const newSession = authResponseToSession(res);
-    saveSession(newSession);
+    saveSession(newSession, rememberMe);
     setSession(newSession);
     setError(null);
   }, []);
 
   const register = useCallback(
-    async (data: RegisterRequest) => {
+    async (data: RegisterRequest, rememberMe = true) => {
       setIsLoading(true);
       setError(null);
       try {
         const res = await apiPost<AuthResponse>('/auth/register', data, false);
-        handleAuthResponse(res);
+        handleAuthResponse(res, rememberMe);
       } catch (e) {
         if (e instanceof ApiError) {
           setError(e.problem.detail || e.problem.title);
@@ -75,12 +76,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   const login = useCallback(
-    async (data: LoginRequest) => {
+    async (data: LoginRequest, rememberMe = true) => {
       setIsLoading(true);
       setError(null);
       try {
         const res = await apiPost<AuthResponse>('/auth/login', data, false);
-        handleAuthResponse(res);
+        handleAuthResponse(res, rememberMe);
       } catch (e) {
         if (e instanceof ApiError) {
           if (e.status === 401) {
@@ -111,13 +112,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const demoLogin = useCallback(() => {
     const demoSession: StoredSession = {
-      userId: 'u-me',
+      userId: MOCK_CURRENT_USER_ID,
       accessToken: 'demo-token',
       refreshToken: 'demo-refresh',
       accessTokenExpiresAt: Date.now() + 24 * 60 * 60 * 1000,
       refreshTokenExpiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000,
     };
-    saveSession(demoSession);
+    saveSession(demoSession, true);
     setSession(demoSession);
     setError(null);
   }, []);

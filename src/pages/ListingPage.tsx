@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { Link, useLocation, useNavigate, useParams } from 'react-router';
-import { fetchListingById, fetchProfile } from '@/api/listingsApi';
-import { MOCK_CURRENT_USER_ID, mockProfiles } from '@/api/mocks/data';
+import { fetchListingById, fetchProfile, canFetchPublicUserProfile, isApiMocksMode } from '@/api/listingsApi';
+import { mockProfiles } from '@/api/mocks/data';
 import { useAuth } from '@/app/auth/AuthContext';
 import { useChatStore } from '@/app/chat/ChatProvider';
 import { ROUTES } from '@/shared/config/routes';
@@ -20,7 +20,7 @@ export function ListingPage() {
   const { listingId } = useParams<{ listingId: string }>();
   const navigate = useNavigate();
   const location = useLocation();
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, userId: authUserId } = useAuth();
   const { ensureThreadWith } = useChatStore();
 
   const listingQuery = useQuery({
@@ -34,7 +34,12 @@ export function ListingPage() {
   const authorQuery = useQuery({
     queryKey: authorId ? queryKeys.profile(authorId) : queryKeys.profile('__skip__'),
     queryFn: () => fetchProfile(authorId!),
-    enabled: Boolean(authorId),
+    enabled: Boolean(
+      listingQuery.data &&
+        listingQuery.data.authorId &&
+        canFetchPublicUserProfile(listingQuery.data.authorId) &&
+        !listingQuery.data.embeddedAuthor,
+    ),
   });
 
   if (!listingId) return <p className="text-stone-600">Объявление не найдено.</p>;
@@ -51,8 +56,8 @@ export function ListingPage() {
   }
 
   const listing = listingQuery.data;
-  const author = authorQuery.data ?? mockProfiles[listing.authorId];
-  const isOwn = isAuthenticated && listing.authorId === MOCK_CURRENT_USER_ID;
+  const author = listing.embeddedAuthor ?? authorQuery.data ?? mockProfiles[listing.authorId];
+  const isOwn = isAuthenticated && authUserId != null && listing.authorId === authUserId;
 
   const onWrite = () => {
     if (isOwn) return;
@@ -100,7 +105,7 @@ export function ListingPage() {
               <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
                 <div className="flex min-w-0 items-center gap-3">
                   <Link to={ROUTES.profile(author.id)} className="shrink-0 touch-manipulation">
-                    <Avatar src={author.avatarUrl} alt={author.displayName} size="lg" />
+                    <Avatar src={author.avatarUrl} alt={author.displayName} size="lg" mediaAuthFallback={!isApiMocksMode()} />
                   </Link>
                   <div className="min-w-0">
                     <Link

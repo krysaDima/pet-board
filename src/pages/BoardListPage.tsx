@@ -2,10 +2,10 @@ import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import gsap from 'gsap';
 import { Link } from 'react-router';
-import { fetchListings } from '@/api/listingsApi';
+import { fetchListings, isApiMocksMode } from '@/api/listingsApi';
 import { ROUTES } from '@/shared/config/routes';
 import { queryKeys } from '@/shared/lib/queryKeys';
-import type { Listing } from '@/entities/listing/model/types';
+import type { Listing, ListingAuthorPreview } from '@/entities/listing/model/types';
 import { formatListingPriceShort } from '@/entities/listing/lib/formatListingPrice';
 import { mockProfiles } from '@/api/mocks/data';
 import { StarsRating } from '@/shared/ui/StarsRating';
@@ -156,8 +156,20 @@ function FilterChip({ children, active, onClick }: { children: string; active: b
   );
 }
 
+function authorPreviewForRow(listing: Listing): ListingAuthorPreview | undefined {
+  if (listing.authorPreview) return listing.authorPreview;
+  const profile = mockProfiles[listing.authorId];
+  if (!profile) return undefined;
+  return {
+    displayName: profile.displayName,
+    avatarUrl: profile.avatarUrl,
+    ratingAvg: profile.ratingAvg,
+    reviewCount: profile.reviewCount,
+  };
+}
+
 function ListingRow({ listing }: { listing: Listing }) {
-  const author = mockProfiles[listing.authorId];
+  const author = authorPreviewForRow(listing);
   return (
     <Link
       to={ROUTES.listing(listing.id)}
@@ -191,7 +203,7 @@ function ListingRow({ listing }: { listing: Listing }) {
         <div className="mt-1 flex flex-col gap-3 border-t border-stone-100 pt-3 sm:mt-auto sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:border-0 sm:pt-0">
           {author ? (
             <div className="flex min-w-0 items-center gap-2">
-              <Avatar src={author.avatarUrl} alt={author.displayName} size="sm" />
+              <Avatar src={author.avatarUrl} alt={author.displayName} size="sm" mediaAuthFallback={!isApiMocksMode()} />
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-semibold text-stone-900">{author.displayName}</p>
                 <StarsRating ratingAvg={author.ratingAvg} reviewCount={author.reviewCount} compact />

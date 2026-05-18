@@ -10,6 +10,8 @@ export const ROUTES = {
   auth: '/auth',
   chats: '/chats',
   listing: (listingId: string) => `/listing/${listingId}`,
+  /** Личный кабинет: в API использовать только `/me/*`, не подставлять сегмент URL в `{userId}`. */
+  myProfile: '/profile',
   profile: (userId: string) => `/profile/${userId}`,
   chatThread: (chatId: string) => `/chats/${chatId}`,
 } as const;
