@@ -4,12 +4,19 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-    href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500&family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&display=swap"
+    href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500&family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&family=Outfit:wght@500;600;700;800&display=swap"
       rel="stylesheet"
     />
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <title>Счастливый питомец — пробная версия</title>
+    <meta name="theme-color" content="#c17f5c" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <link rel="icon" href="%BASE_URL%favicon.ico" sizes="48x48" />
+    <link rel="icon" type="image/png" href="%BASE_URL%favicon.png" sizes="any" />
+    <link rel="apple-touch-icon" href="%BASE_URL%apple-touch-icon.png" />
+    <title>Счастливый пёсик</title>
   </head>
   <body>
     <div id="root">
@@ -32,6 +39,10 @@
         Подождите 2–3 секунды. Если этот блок не исчез, читайте текст ниже — он сменится автоматически.
       </p>
     </div>
+    <!-- sockjs-client ожидает global (Node); в браузере задаём до загрузки модулей. -->
+    <script>
+      globalThis.global = globalThis;
+    </script>
     <!-- Сразу проверяем открытие с диска (file://) — тогда React никогда не загрузится. -->
     <script>
       (function () {

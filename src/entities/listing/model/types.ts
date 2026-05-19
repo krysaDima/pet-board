@@ -32,6 +32,8 @@ export type Listing = {
   /** Срок или даты — в пробной версии строка */
   periodText: string;
   coverImageUrl: string;
+  /** Галерея изображений объявления */
+  galleryUrls?: string[];
   /** Если заказчик привязал питомца к объявлению */
   petId?: string;
   /** Из карточки объявления: автор уже в теле ответа */
@@ -40,4 +42,18 @@ export type Listing = {
   authorPreview?: ListingAuthorPreview;
   /** Если пришло из полного ответа API */
   publishStatus?: ListingPublishStatus;
+  /** Контактный телефон */
+  contactPhone?: string;
+  /** Контактный Telegram */
+  contactTelegram?: string;
+  /** Условия содержания */
+  conditions?: string;
+  /** Опыт работы с животными */
+  experience?: string;
+  /** Дата создания */
+  createdAt?: string;
+  /** Когда опубликовано */
+  publishedAt?: string;
+  /** Когда автоматически снимется с публикации */
+  expiresAt?: string;
 };

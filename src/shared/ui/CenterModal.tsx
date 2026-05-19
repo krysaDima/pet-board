@@ -46,7 +46,7 @@ export function CenterModal({ open, title, description, onClose, confirm, okLabe
   const isConfirm = Boolean(confirm);
 
   const modal = (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 sm:p-6">
+    <div className="fixed inset-0 z-[200] flex items-end justify-center p-0 sm:items-center sm:p-6">
       <button
         type="button"
         className="absolute inset-0 bg-stone-900/50 backdrop-blur-[2px]"
@@ -54,7 +54,7 @@ export function CenterModal({ open, title, description, onClose, confirm, okLabe
         onClick={onClose}
       />
       <div
-        className="relative z-[1] w-full max-w-[min(100%,24rem)] rounded-2xl border border-stone-200/90 bg-white p-6 shadow-2xl shadow-stone-900/20 ring-1 ring-stone-100"
+        className="relative z-[1] max-h-[min(92dvh,100%)] w-full max-w-[min(100%,24rem)] overflow-y-auto overscroll-contain rounded-t-2xl border border-stone-200/90 bg-white p-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] shadow-2xl shadow-stone-900/20 ring-1 ring-stone-100 sm:rounded-2xl sm:pb-6"
         role={isConfirm ? 'alertdialog' : 'alert'}
         aria-modal="true"
         aria-labelledby="center-modal-title"

@@ -93,3 +93,18 @@ export function petAvatarProxyUrl(
   if (rawUrl) return `${base}?v=${urlVersionHash(rawUrl)}`;
   return base;
 }
+
+/**
+ * URL обложки объявления через прокси API.
+ * @param rawUrl оригинальный URL из DTO (cache-busting при замене файла)
+ */
+export function listingCoverProxyUrl(
+  listingId: string,
+  apiOrigin: string = getApiBaseUrl(),
+  rawUrl?: string,
+): string {
+  const b = apiOrigin.replace(/\/+$/, '');
+  const base = `${b}/api/v1/listings/${listingId}/cover`;
+  if (rawUrl) return `${base}?v=${urlVersionHash(rawUrl)}`;
+  return base;
+}

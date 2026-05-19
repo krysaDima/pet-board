@@ -31,12 +31,12 @@ type LoginFormData = z.infer<typeof loginSchema>;
 type RegisterFormData = z.infer<typeof registerSchema>;
 
 /**
- * Страница авторизации: вход, регистрация и демо-режим.
+ * Страница авторизации: вход и регистрация.
  * Пароль не кладём в localStorage — только автозаполнение (`autocomplete`, `name`) и при возможности Credential Management API.
  * «Запомнить меня» влияет только на сессию (localStorage vs sessionStorage).
  */
 export function AuthPage() {
-  const { login, register, demoLogin, isAuthenticated, isLoading, error, clearError } = useAuth();
+  const { login, register, isAuthenticated, isLoading, error, clearError } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const from = (location.state as { from?: string } | null)?.from ?? ROUTES.home;
@@ -82,7 +82,8 @@ export function AuthPage() {
 
   const onRegister = async (data: RegisterFormData) => {
     try {
-      const { passwordConfirm: _omit, ...rest } = data;
+      const { passwordConfirm: _, ...rest } = data;
+      void _;
       await register({ ...rest, role: 'SEEKER' }, rememberRegister);
       void offerToSavePassword({
         email: data.email,
@@ -93,11 +94,6 @@ export function AuthPage() {
     } catch {
       /* ошибка показана в error */
     }
-  };
-
-  const onDemoLogin = () => {
-    demoLogin();
-    navigateAfterAuth();
   };
 
   const switchMode = (newMode: 'login' | 'register') => {
@@ -320,21 +316,6 @@ export function AuthPage() {
             </Button>
           </form>
         )}
-
-        <div className="relative">
-          <div className="absolute inset-0 flex items-center">
-            <div className="w-full border-t border-stone-200" />
-          </div>
-          <div className="relative flex justify-center text-xs uppercase">
-            <span className="bg-white px-2 text-stone-500">или</span>
-          </div>
-        </div>
-
-        <Button variant="outline" className="w-full" type="button" onClick={onDemoLogin}>
-          Войти без регистрации (демо)
-        </Button>
-
-        <p className="text-center text-xs text-stone-500">Демо-режим для тестирования без бэкенда</p>
       </Card>
     </div>
   );

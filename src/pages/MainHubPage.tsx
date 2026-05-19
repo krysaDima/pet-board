@@ -2,17 +2,36 @@ import { useLayoutEffect, useRef } from 'react';
 import gsap from 'gsap';
 import { Link } from 'react-router';
 import { ROUTES } from '@/shared/config/routes';
+import { PawBadge } from '@/shared/ui/PawBadge';
 
-/** Фоновые кадры для главного выбора раздела (Unsplash). */
-const IMG_BOARD = 'https://images.unsplash.com/photo-1450778869180-41d0601e046e?auto=format&fit=crop&w=2000&q=88';
-/** Локальный кадр «Помощь животным» (вертикальное фото, full-bleed на карточке как у «Передержки»). */
-const IMG_HELP = '/images/help-animals-hero.png';
-/** Локальный кадр «Услуги для животных» на главной (вертикальное фото, full-bleed как у соседних карточек). */
-const IMG_SERVICES = '/images/pet-services-hero.png';
+const HERO_IMG = '/images/hero-home.png';
+
+const SERVICES = [
+  {
+    to: ROUTES.board,
+    title: 'Передержка',
+    desc: 'Надёжный дом на время отъезда: ситтеры и владельцы находят друг друга на доске объявлений.',
+    img: 'https://images.unsplash.com/photo-1450778869180-41d0601e046e?auto=format&fit=crop&w=800&q=85',
+    ready: true,
+  },
+  {
+    to: ROUTES.helpAnimals,
+    title: 'Помощь животным',
+    desc: 'Поддержка приютов, волонтёров и питомцев, которым нужна забота. Раздел скоро расширится.',
+    img: 'https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?auto=format&fit=crop&w=800&q=85',
+    ready: false,
+  },
+  {
+    to: ROUTES.petServices,
+    title: 'Услуги для питомцев',
+    desc: 'Груминг, выгул, ветконсультации и другие услуги — подключим в той же стилистике.',
+    img: 'https://images.unsplash.com/photo-1516734212184-9671993a8b7c?auto=format&fit=crop&w=800&q=85',
+    ready: false,
+  },
+] as const;
 
 /**
- * Главная: крупные блоки с фото и «Перейти».
- * Всплывающие декоративные элементы при hover на карточках не используются — только фон и лёгкий CSS scale.
+ * Главная в стиле лендинга: hero с фото, слоган и три карточки услуг.
  */
 export function MainHubPage() {
   const rootRef = useRef<HTMLElement>(null);
@@ -20,150 +39,119 @@ export function MainHubPage() {
   useLayoutEffect(() => {
     const el = rootRef.current;
     if (!el) return;
-
     const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    const mobile = window.matchMedia('(max-width: 767px)').matches;
-
     const ctx = gsap.context(() => {
       if (reduce) return;
-      const y = mobile ? 20 : 48;
-      const dur = mobile ? 0.5 : 0.75;
-      gsap.from('.hub-eyebrow', {
+      gsap.from('.landing-hero', { opacity: 0, y: 24, duration: 0.7, ease: 'power3.out' });
+      gsap.from('.landing-service-card', {
         opacity: 0,
-        y: mobile ? 8 : 12,
-        duration: 0.4,
+        y: 32,
+        duration: 0.55,
+        stagger: 0.1,
         ease: 'power2.out',
-      });
-      gsap.from('.hub-panel', {
-        opacity: 0,
-        y,
-        duration: dur,
-        stagger: mobile ? 0.06 : 0.1,
-        ease: 'power3.out',
-        delay: 0.06,
-      });
-      gsap.from('.hub-panel-cta', {
-        opacity: 0,
-        x: mobile ? 0 : -12,
-        duration: 0.35,
-        stagger: 0.08,
-        ease: 'power2.out',
-        delay: mobile ? 0.22 : 0.4,
+        delay: 0.25,
       });
     }, el);
-
     return () => ctx.revert();
   }, []);
 
   return (
-    <section ref={rootRef} className="mx-auto max-w-6xl space-y-6 pb-2 sm:space-y-8 sm:pb-4">
-      <header className="hub-eyebrow text-center">
-        <p className="text-[10px] font-bold uppercase tracking-[0.28em] text-amber-800/90 sm:text-[11px] sm:tracking-[0.38em]">
-          Добро пожаловать
-        </p>
-        <h1 className="mt-2 font-display text-[1.85rem] font-semibold leading-[1.15] text-stone-900 sm:mt-3 sm:text-5xl sm:leading-tight">
-          Забота о питомцах
-        </h1>
-        <p className="mx-auto mt-2 max-w-2xl px-1 text-sm leading-relaxed text-stone-600 sm:mt-3 sm:px-0 sm:text-base">
-          Выберите раздел — доска передержки, помощь животным или услуги. Гостям доступен просмотр; чаты и переписка —
-          после авторизации.
-        </p>
-      </header>
+    <section ref={rootRef} className="relative -mx-4 px-4 sm:-mx-0 sm:px-0">
+      <span
+        className="landing-blob -left-16 top-8 h-40 w-40 bg-sage-200/40 sm:h-56 sm:w-56"
+        aria-hidden
+      />
+      <span
+        className="landing-blob -right-12 top-32 h-32 w-32 rounded-[40%] bg-cream-200/80 sm:h-48 sm:w-48"
+        aria-hidden
+      />
 
-      <div className="grid min-h-0 gap-3 sm:gap-5 md:min-h-[min(72vh,560px)] md:grid-cols-3">
-        <Link
-          to={ROUTES.board}
-          className="hub-panel group relative flex min-h-[200px] touch-manipulation rounded-2xl shadow-xl shadow-stone-900/15 ring-1 ring-white/10 active:scale-[0.99] max-md:min-h-[38vh] sm:min-h-[260px] sm:rounded-3xl md:min-h-0 md:active:scale-100"
-        >
-          <div className="absolute inset-0 z-0 overflow-hidden rounded-2xl sm:rounded-3xl">
-            <img
-              src={IMG_BOARD}
-              alt=""
-              className="absolute inset-0 h-full w-full object-cover transition-transform duration-700 ease-out md:group-hover:scale-[1.04]"
-              loading="eager"
-              decoding="async"
-            />
-            <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-stone-950/92 via-stone-900/55 to-stone-900/25 transition-opacity duration-500 group-hover:from-stone-950/95" />
-          </div>
-
-          <div className="relative z-10 mt-auto flex flex-col p-5 sm:p-7">
-            <span className="text-[10px] font-bold uppercase tracking-[0.22em] text-amber-100/95 sm:text-[11px] sm:tracking-[0.28em]">
-              Доска объявлений
-            </span>
-            <h2 className="mt-1.5 font-display text-[1.5rem] font-semibold tracking-wide text-white sm:mt-2 sm:text-3xl md:text-[2.1rem]">
-              Передержка
-            </h2>
-            <p className="mt-2 max-w-sm text-sm leading-relaxed text-stone-200/95 sm:mt-3 sm:text-[15px]">
-              Найдите исполнителя или разместите запрос после входа.
-            </p>
-            <span className="hub-panel-cta mt-4 inline-flex min-h-[44px] items-center gap-2 text-sm font-bold uppercase tracking-widest text-amber-200 sm:mt-5">
-              Перейти <span aria-hidden>»</span>
-            </span>
-          </div>
-        </Link>
-
-        <Link
-          to={ROUTES.helpAnimals}
-          className="hub-panel group relative flex min-h-[200px] touch-manipulation rounded-2xl shadow-xl shadow-stone-900/15 ring-1 ring-white/10 active:scale-[0.99] max-md:min-h-[38vh] sm:min-h-[260px] sm:rounded-3xl md:min-h-0 md:active:scale-100"
-        >
-          <div className="absolute inset-0 z-0 overflow-hidden rounded-2xl sm:rounded-3xl">
-            <img
-              src={IMG_HELP}
-              alt=""
-              className="absolute inset-0 h-full w-full object-cover object-[48%_center] transition-transform duration-700 ease-out md:group-hover:scale-[1.04]"
-              loading="eager"
-              decoding="async"
-            />
-            <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-stone-950/92 via-stone-900/55 to-stone-900/25 transition-opacity duration-500 group-hover:from-stone-950/95" />
-          </div>
-
-          <div className="relative z-10 mt-auto flex flex-col p-5 sm:p-7">
-            <span className="text-[10px] font-bold uppercase tracking-[0.22em] text-amber-100/95 sm:text-[11px] sm:tracking-[0.28em]">
-              Скоро
-            </span>
-            <h2 className="mt-1.5 font-display text-[1.5rem] font-semibold tracking-wide text-white sm:mt-2 sm:text-3xl md:text-[2.1rem]">
-              Помощь животным
-            </h2>
-            <p className="mt-2 max-w-sm text-sm leading-relaxed text-stone-200/95 sm:mt-3 sm:text-[15px]">
-              Бездомным и обиженным питомцам нужна забота. Здесь появятся сборы, волонтёры и приюты — пока заглушка.
-            </p>
-            <span className="hub-panel-cta mt-4 inline-flex min-h-[44px] items-center gap-2 text-sm font-bold uppercase tracking-widest text-amber-200 sm:mt-5">
-              Перейти <span aria-hidden>»</span>
-            </span>
-          </div>
-        </Link>
-
-        <Link
-          to={ROUTES.petServices}
-          className="hub-panel group relative flex min-h-[200px] touch-manipulation rounded-2xl shadow-xl shadow-stone-900/15 ring-1 ring-white/10 active:scale-[0.99] max-md:min-h-[38vh] sm:min-h-[260px] sm:rounded-3xl md:min-h-0 md:active:scale-100"
-        >
-          <div className="absolute inset-0 overflow-hidden rounded-2xl sm:rounded-3xl">
-            <img
-              src={IMG_SERVICES}
-              alt=""
-              className="absolute inset-0 h-full w-full object-cover object-[48%_center] transition-transform duration-700 ease-out md:group-hover:scale-[1.04]"
-              loading="eager"
-              decoding="async"
-            />
-            <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-indigo-950/92 via-violet-900/45 to-stone-900/20 transition-opacity duration-500 group-hover:from-indigo-950/96" />
-          </div>
-
-          <div className="relative z-10 mt-auto flex flex-col p-5 sm:p-7">
-            <span className="text-[10px] font-bold uppercase tracking-[0.22em] text-violet-100/95 sm:text-[11px] sm:tracking-[0.28em]">
-              Скоро
-            </span>
-            <h2 className="mt-1.5 font-display text-[1.5rem] font-semibold tracking-wide text-white sm:mt-2 sm:text-3xl md:text-[2.1rem]">
-              Услуги для животных
-            </h2>
-            <p className="mt-2 max-w-sm text-sm leading-relaxed text-stone-200/95 sm:mt-3 sm:text-[15px]">
-              Груминг, выгул, ветконсультации, зоотакси — раздел в той же стилистике, подключим позже.
-            </p>
-            <span className="hub-panel-cta mt-4 inline-flex min-h-[44px] items-center gap-2 text-sm font-bold uppercase tracking-widest text-violet-100 sm:mt-5">
-              Перейти <span aria-hidden>»</span>
-            </span>
-          </div>
-        </Link>
+      <div className="landing-hero relative overflow-hidden rounded-[2rem] shadow-2xl shadow-warm-900/15 ring-1 ring-white/60 sm:rounded-[2.5rem]">
+        <div className="relative grid min-h-[min(420px,72dvh)] sm:min-h-[min(520px,85vh)] lg:grid-cols-[1.15fr_1fr]">
+          <HeroPhoto />
+          <HeroCopy />
+        </div>
       </div>
+
+      <ul className="relative z-10 -mt-6 grid gap-5 sm:-mt-14 sm:grid-cols-3 sm:gap-6 lg:-mt-20">
+        {SERVICES.map((s) => (
+          <li key={s.to}>
+            <Link
+              to={s.to}
+              className="landing-service-card group flex h-full flex-col overflow-hidden rounded-3xl bg-white shadow-lg shadow-warm-900/10 ring-1 ring-cream-200 transition hover:-translate-y-1 hover:shadow-xl hover:shadow-sage-900/10"
+            >
+              <div className="relative h-36 overflow-hidden bg-cream-100 sm:h-40">
+                <img
+                  src={s.img}
+                  alt=""
+                  className="h-full w-full object-cover transition duration-500 group-hover:scale-105"
+                  loading="lazy"
+                />
+              </div>
+              <ServiceCardBody title={s.title} desc={s.desc} ready={s.ready} />
+            </Link>
+          </li>
+        ))}
+      </ul>
     </section>
+  );
+}
+
+function HeroPhoto() {
+  return (
+    <div className="relative min-h-[240px] lg:min-h-0">
+      <img
+        src={HERO_IMG}
+        alt="Собака и кошки в уютной гостиной"
+        className="absolute inset-0 h-full w-full object-cover object-center"
+        loading="eager"
+        decoding="async"
+      />
+      <div className="absolute inset-0 bg-gradient-to-t from-sage-900/50 via-transparent to-transparent lg:hidden" />
+      <div className="absolute inset-0 hidden bg-gradient-to-r from-transparent via-transparent to-sage-900/25 lg:block" />
+    </div>
+  );
+}
+
+function HeroCopy() {
+  return (
+    <div className="relative flex flex-col justify-center bg-gradient-to-br from-sage-800/95 via-sage-700/92 to-sage-900/95 px-6 py-10 sm:px-10 sm:py-14 lg:px-12">
+      <p className="text-[10px] font-bold uppercase tracking-[0.35em] text-sage-200/90 sm:text-xs">Счастливый пёсик</p>
+      <h1 className="mt-3 font-sans text-3xl font-extrabold uppercase leading-[1.08] tracking-tight text-white sm:text-4xl lg:text-[2.65rem]">
+        <span className="text-white">Дарим счастье</span>
+        <br />
+        <span className="text-sage-200">вашему хвостику</span>
+      </h1>
+      <p className="mt-4 max-w-md text-sm leading-relaxed text-sage-100/95 sm:text-base">
+        Профессиональная передержка, забота о питомцах и полезные сервисы — всё в одном месте. Найдите ситтера или
+        разместите объявление после входа.
+      </p>
+      <Link
+        to={ROUTES.board}
+        className="mt-8 inline-flex min-h-[48px] w-fit items-center justify-center rounded-full bg-white px-8 py-3 text-sm font-bold uppercase tracking-wider text-sage-800 shadow-lg transition hover:bg-sage-50 active:scale-[0.98]"
+      >
+        Выбрать услугу
+      </Link>
+    </div>
+  );
+}
+
+function ServiceCardBody({ title, desc, ready }: { title: string; desc: string; ready: boolean }) {
+  return (
+    <div className="flex flex-1 flex-col p-5 sm:p-6">
+      <div className="-mt-8 flex items-start justify-between gap-2">
+        <PawBadge className="shadow-md" />
+        {!ready ? (
+          <span className="rounded-full bg-sage-100 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-sage-700">
+            Скоро
+          </span>
+        ) : null}
+      </div>
+      <h2 className="mt-2 font-sans text-lg font-extrabold uppercase tracking-wide text-warm-900 sm:text-xl">{title}</h2>
+      <p className="mt-2 flex-1 text-sm leading-relaxed text-warm-600/90">{desc}</p>
+      <span className="mt-4 text-sm font-bold text-sage-600 transition group-hover:text-sage-700">
+        Подробнее <span aria-hidden>›</span>
+      </span>
+    </div>
   );
 }

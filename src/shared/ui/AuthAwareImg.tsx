@@ -6,6 +6,9 @@ type Props = {
   alt: string;
   className?: string;
   loading?: 'lazy' | 'eager';
+  fetchPriority?: 'high' | 'low' | 'auto';
+  /** false — плейсхолдер до появления в viewport (галерея на мобильном). */
+  loadWhen?: boolean;
   mediaAuthFallback?: boolean;
   draggable?: boolean;
 };
@@ -16,11 +19,14 @@ export function AuthAwareImg({
   alt,
   className,
   loading = 'lazy',
+  fetchPriority,
+  loadWhen = true,
   mediaAuthFallback = true,
   draggable,
 }: Props) {
-  const { displaySrc, onImgError } = useAuthAwareImg(src, { authFallback: mediaAuthFallback });
-  if (!displaySrc.trim()) {
+  const effectiveSrc = loadWhen ? src : '';
+  const { displaySrc, onImgError } = useAuthAwareImg(effectiveSrc, { authFallback: mediaAuthFallback });
+  if (!loadWhen || !displaySrc.trim()) {
     return (
       <div
         className={`flex items-center justify-center bg-gradient-to-br from-stone-100 via-amber-50/50 to-orange-50/80 text-stone-400 ${className ?? ''}`}
@@ -37,6 +43,9 @@ export function AuthAwareImg({
       alt={alt}
       className={className}
       loading={loading}
+      decoding="async"
+      fetchPriority={fetchPriority}
+      sizes="(max-width: 639px) 100vw, 18rem"
       {...(draggable !== undefined ? { draggable } : {})}
       onError={onImgError}
     />

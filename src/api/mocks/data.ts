@@ -1,5 +1,3 @@
-import type { ChatThread } from '@/entities/chat/model/types';
-import { makeDmChatId } from '@/entities/chat/lib/makeDmChatId';
 import type { Listing } from '@/entities/listing/model/types';
 import type { PetCard } from '@/entities/pet/model/types';
 import type { PublicProfile, Review } from '@/entities/user/model/types';
@@ -71,43 +69,72 @@ export const mockListings: Listing[] = [
     authorId: DEMO_USER_MARINA,
     kind: 'offer_sitter',
     title: 'Передержка кошек, Запад Москвы',
-    description: 'Спокойная квартира без других животных. Фотоотчёт раз в день. Встреча перед стартом обязательна.',
+    description: 'Спокойная квартира без других животных. Фотоотчёт раз в день. Встреча перед стартом обязательна.\n\nПринимаю котиков любого возраста. Есть опыт с больными и пожилыми животными.',
     city: 'Москва',
     priceRubPerDay: 900,
     periodText: 'По договорённости',
     coverImageUrl: ph('photo-1514888286974-6c03e2ca1dba', 1200, 720),
+    contactPhone: '+7 (999) 123-45-67',
+    contactTelegram: '@marina_pets',
+    conditions: 'Отдельная комната для питомца, закрытый балкон, специальные лотки и миски. Корм по согласованию с хозяином.',
+    experience: '6 лет опыта передержки кошек. Более 50 довольных клиентов. Есть рекомендации.',
+    createdAt: '2026-05-15',
   },
   {
     id: 'l2',
     authorId: DEMO_USER_ALEXEY,
     kind: 'need_sitter',
-    title: 'Нужна передержка лабратора ~10 дней',
-    description: 'Командировка с 3 по 14 июня. Нужен опыт с крупными собаками.',
+    title: 'Нужна передержка лабрадора ~10 дней',
+    description: 'Командировка с 3 по 14 июня. Нужен опыт с крупными собаками.\n\nАрчи — дружелюбный лабрадор, любит людей и детей. Хорошо социализирован.',
     city: 'Москва',
     periodText: '03.06 — 14.06',
     coverImageUrl: ph('photo-1587300003388-59208cc962cb', 1200, 720),
     petId: 'p1',
+    contactPhone: '+7 (916) 555-12-34',
+    contactTelegram: '@alexey_dog',
+    createdAt: '2026-05-18',
   },
   {
     id: 'l3',
     authorId: DEMO_USER_MARINA,
     kind: 'offer_sitter',
     title: 'Загородный дом с участком для собак',
-    description: 'Огороженный двор, выгул 3 раза в день. Приму средних и крупных пород по предварительному знакомству.',
+    description: 'Огороженный двор, выгул 3 раза в день. Приму средних и крупных пород по предварительному знакомству.\n\nПриезжайте на экскурсию — покажу условия!',
     city: 'Одинцово',
     priceRubPerDay: 1400,
     periodText: 'Май — сентябрь',
     coverImageUrl: ph('photo-1548199973-03cce0bbc87b', 1200, 720),
+    contactTelegram: '@marina_pets',
+    conditions: 'Огороженный участок 10 соток, будка и место в доме. Другие собаки есть — знакомство обязательно.',
+    experience: 'Свой питомник, опыт работы с собаками более 10 лет.',
+    createdAt: '2026-05-10',
   },
   {
     id: 'l4',
     authorId: DEMO_USER_ALEXEY,
     kind: 'need_sitter',
     title: 'Две кошки на время ремонта (~2 недели)',
-    description: 'Нужен опытный человек без собак дома. Лотки и переноски предоставим.',
+    description: 'Нужен опытный человек без собак дома. Лотки и переноски предоставим.\n\nКошки: британская и шотландская, обе стерилизованы, спокойные.',
     city: 'Москва',
     periodText: 'Июль, даты гибкие',
     coverImageUrl: ph('photo-1573865526739-10aa826cbf78', 1200, 720),
+    contactPhone: '+7 (916) 555-12-34',
+    createdAt: '2026-05-01',
+  },
+  {
+    id: 'l5',
+    authorId: DEMO_USER_MARINA,
+    kind: 'offer_sitter',
+    title: 'Передержка мелких собак в центре',
+    description: 'Квартира в центре Москвы. Идеально для йорков, шпицев, чихуахуа и других мелких пород.',
+    city: 'Москва',
+    priceRubPerDay: 1200,
+    periodText: 'Круглый год',
+    coverImageUrl: ph('photo-1583511655857-d19b40a7a54e', 1200, 720),
+    contactTelegram: '@marina_pets',
+    conditions: 'Небольшая квартира, но уютная. Прогулки 4 раза в день. Можно с кошками.',
+    experience: 'Специализируюсь на декоративных породах. Грумер по образованию.',
+    createdAt: '2026-05-12',
   },
 ];
 
@@ -142,19 +169,3 @@ export const mockReviewsByUser: Record<string, Review[]> = {
   ],
   [MOCK_CURRENT_USER_ID]: [],
 };
-
-/** Начальные демо-чаты (остальные создаются по кнопке «Написать»). */
-export const mockInitialChats: ChatThread[] = [
-  {
-    id: makeDmChatId(MOCK_CURRENT_USER_ID, DEMO_USER_MARINA),
-    participantIds: [MOCK_CURRENT_USER_ID, DEMO_USER_MARINA].sort(),
-    messages: [
-      {
-        id: 'm1',
-        senderId: DEMO_USER_MARINA,
-        body: 'Здравствуйте! Могу ответить на вопросы по передержке.',
-        sentAt: new Date(Date.now() - 86400000 * 2).toISOString(),
-      },
-    ],
-  },
-];

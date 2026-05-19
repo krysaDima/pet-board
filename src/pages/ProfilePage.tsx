@@ -1,5 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useCallback, useEffect, useId, useRef, useState, type MouseEvent, type ReactNode } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type MouseEvent,
+  type ReactNode,
+  type RefObject,
+} from 'react';
 import { createPortal } from 'react-dom';
 import { Link, useLocation, useNavigate, useParams } from 'react-router';
 import {
@@ -9,10 +18,14 @@ import {
   fetchPets,
   fetchProfile,
   fetchReviews,
+  fetchUserListings,
   canFetchPublicUserProfile,
   isApiMocksMode,
+  createDirectReview,
+  updateReview,
+  deleteReview,
 } from '@/api/listingsApi';
-import type { UpdatePetBody, CreatePetBody } from '@/api/types';
+import type { UpdatePetBody, CreatePetBody, CreateListingBody, UpdateListingBody } from '@/api/types';
 import {
   createMyListing,
   createMyPet,
@@ -22,22 +35,36 @@ import {
   deleteMyProfileGalleryImage,
   deletePetAvatar,
   fetchMyListings,
+  fetchMyListingQuota,
   publishMyListing,
   syncMyProfileRoleFromListings,
+  updateMyListing,
   updateMyPet,
   updateMyProfile,
   uploadMyProfileAvatar,
   uploadMyProfileGalleryImage,
   uploadPetAvatar,
+  uploadListingCover,
 } from '@/api/meApi';
 import { useAuth } from '@/app/auth/AuthContext';
+import { useBlockedUsers } from '@/app/block/BlockedUsersProvider';
+import { useAppNotice } from '@/app/notice/AppNoticeProvider';
 import { useChatStore } from '@/app/chat/ChatProvider';
-import type { PublicProfile } from '@/entities/user/model/types';
+import { BlockUserConfirmModal } from '@/features/chat/ui/BlockUserConfirmModal';
+import type { PublicProfile, Review } from '@/entities/user/model/types';
 import type { Listing, ListingPublishStatus } from '@/entities/listing/model/types';
+import {
+  formatPublishedDaysLeftRu,
+  getListingExpirationHintForListing,
+} from '@/entities/listing/lib/listingPublication';
+import { canCreateMoreListingsFromQuota, formatListingQuotaUsage } from '@/entities/listing/lib/listingLimits';
 import type { PetCard } from '@/entities/pet/model/types';
 import { ROUTES } from '@/shared/config/routes';
 import { getApiErrorMessage } from '@/shared/lib/apiErrorMessage';
+import { preloadImage } from '@/shared/lib/preloadImage';
 import { queryKeys } from '@/shared/lib/queryKeys';
+import { useDeferImageUntilVisible } from '@/shared/lib/useDeferImageUntilVisible';
+import { useIsNarrowViewport } from '@/shared/lib/useIsNarrowViewport';
 import { Button } from '@/shared/ui/Button';
 import { Card } from '@/shared/ui/Card';
 import { StarsRating } from '@/shared/ui/StarsRating';
@@ -45,6 +72,8 @@ import { AuthAwareImg } from '@/shared/ui/AuthAwareImg';
 import { Avatar } from '@/shared/ui/Avatar';
 import { CenterModal } from '@/shared/ui/CenterModal';
 import { PET_BREED_SUGGESTIONS_RU } from '@/shared/constants/petBreedRu';
+import { ListingFormModal } from '@/features/listing/ui/ListingFormModal';
+import { ReviewFormModal } from '@/features/review/ui/ReviewFormModal';
 
 /** Максимум фотографий в галерее профиля (ограничение на клиенте). */
 const GALLERY_MAX_PHOTOS = 12;
@@ -64,6 +93,22 @@ function listingStatusRu(s: ListingPublishStatus | undefined): string {
     EXPIRED: 'Истекло',
   };
   return m[s] ?? s;
+}
+
+/** Форматирование даты отзыва */
+function formatReviewDate(dateStr: string): string {
+  try {
+    const date = new Date(dateStr);
+    if (isNaN(date.getTime())) return dateStr;
+    const now = new Date();
+    const diffDays = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24));
+    if (diffDays === 0) return 'Сегодня';
+    if (diffDays === 1) return 'Вчера';
+    if (diffDays < 7) return `${diffDays} дн. назад`;
+    return date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
+  } catch {
+    return dateStr;
+  }
 }
 
 /** Поля модалки «Новый питомец»; в API отправляются только непустые (кроме клички). */
@@ -426,6 +471,7 @@ function ProfileAvatarHoverActions({
         src={avatarUrl}
         alt={displayName}
         size="lg"
+        priority
         mediaAuthFallback={mediaAuthFallback}
         className="h-full w-full ring-0 shadow-none"
       />
@@ -468,23 +514,36 @@ function ProfileAvatarHoverActions({
 /** Карточка снимка галереи; при `canDelete` — крестик удаления слева сверху. */
 function GalleryImageTile({
   src,
+  index,
+  deferLoad,
+  scrollRootRef,
   mediaAuthFallback,
   canDelete,
   deleteBusy,
   onDeleteClick,
 }: {
   src: string;
+  index: number;
+  deferLoad: boolean;
+  scrollRootRef?: RefObject<HTMLDivElement | null>;
   mediaAuthFallback: boolean;
   canDelete: boolean;
   deleteBusy: boolean;
   onDeleteClick: () => void;
 }) {
+  const { ref, shouldLoad } = useDeferImageUntilVisible({
+    enabled: deferLoad,
+    rootRef: scrollRootRef,
+  });
+
   return (
-    <div className="relative overflow-hidden rounded-2xl ring-1 ring-stone-200">
+    <div ref={ref} className="relative overflow-hidden rounded-2xl ring-1 ring-stone-200">
       <AuthAwareImg
         src={src}
         alt=""
-        className="h-48 w-full max-w-full object-cover"
+        className="h-40 w-full max-w-full object-cover sm:h-48"
+        loading={index === 0 ? 'eager' : 'lazy'}
+        loadWhen={shouldLoad}
         mediaAuthFallback={mediaAuthFallback}
         draggable={false}
       />
@@ -593,10 +652,14 @@ export function ProfilePage() {
   const qc = useQueryClient();
   const { isAuthenticated, userId: sessionUserId } = useAuth();
   const { ensureThreadWith } = useChatStore();
+  const { isBlockedByMe, isUserHidden, blockUser, unblockUser } = useBlockedUsers();
+  const notice = useAppNotice();
+  const [blockConfirmOpen, setBlockConfirmOpen] = useState(false);
   const [tab, setTab] = useState<'about' | 'pets' | 'reviews' | 'listings'>('about');
   const [modal, setModal] = useState<ProfileModalState>(null);
   const galleryFileInputRef = useRef<HTMLInputElement>(null);
   const galleryStripRef = useRef<HTMLDivElement>(null);
+  const isNarrow = useIsNarrowViewport();
   const [draft, setDraft] = useState<{
     displayName: string;
     bio: string;
@@ -607,6 +670,12 @@ export function ProfilePage() {
   const [editingPetId, setEditingPetId] = useState<string | null>(null);
   /** Режим правления полей профиля (по умолчанию — только просмотр). */
   const [editingProfile, setEditingProfile] = useState(false);
+  /** Модалка создания/редактирования объявления */
+  const [listingModalOpen, setListingModalOpen] = useState(false);
+  const [editingListing, setEditingListing] = useState<Listing | null>(null);
+  /** Модалка создания/редактирования отзыва */
+  const [reviewModalOpen, setReviewModalOpen] = useState(false);
+  const [editingReview, setEditingReview] = useState<Review | null>(null);
 
   const isMineRoute = routeUserId === undefined;
   const publicKeyOk = Boolean(routeUserId && canFetchPublicUserProfile(routeUserId));
@@ -632,7 +701,20 @@ export function ProfilePage() {
   const myListingsQuery = useQuery({
     queryKey: queryKeys.myListings(sessionUserId ?? ''),
     queryFn: fetchMyListings,
-    enabled: Boolean(isMineRoute && sessionUserId && tab === 'listings' && !isApiMocksMode()),
+    enabled: Boolean(isMineRoute && sessionUserId && tab === 'listings'),
+  });
+
+  const listingQuotaQuery = useQuery({
+    queryKey: queryKeys.myListingQuota(sessionUserId ?? ''),
+    queryFn: fetchMyListingQuota,
+    enabled: Boolean(isMineRoute && sessionUserId && tab === 'listings'),
+  });
+
+  /** Публичные объявления пользователя (для чужого профиля) */
+  const userListingsQuery = useQuery({
+    queryKey: ['userListings', routeUserId ?? ''],
+    queryFn: () => fetchUserListings(routeUserId!),
+    enabled: Boolean(!isMineRoute && routeUserId && publicKeyOk && tab === 'listings'),
   });
 
   const clearModal = () => setModal(null);
@@ -646,6 +728,7 @@ export function ProfilePage() {
       void qc.invalidateQueries({ queryKey: queryKeys.myProfile(sessionUserId) });
       void qc.invalidateQueries({ queryKey: queryKeys.myPets(sessionUserId) });
       void qc.invalidateQueries({ queryKey: queryKeys.myListings(sessionUserId) });
+      void qc.invalidateQueries({ queryKey: queryKeys.myListingQuota(sessionUserId) });
     }
     void qc.invalidateQueries({ queryKey: queryKeys.listings });
   };
@@ -732,6 +815,7 @@ export function ProfilePage() {
     mutationFn: createMyListing,
     onSuccess: async () => {
       clearModal();
+      setListingModalOpen(false);
       await afterListingChanged();
     },
     onError: (e: unknown) => showError(getApiErrorMessage(e)),
@@ -751,6 +835,69 @@ export function ProfilePage() {
     onSuccess: async () => {
       clearModal();
       await afterListingChanged();
+    },
+    onError: (e: unknown) => showError(getApiErrorMessage(e)),
+  });
+
+  const updateListingMut = useMutation({
+    mutationFn: ({ id, body }: { id: string; body: UpdateListingBody }) => updateMyListing(id, body),
+    onSuccess: async () => {
+      clearModal();
+      setListingModalOpen(false);
+      setEditingListing(null);
+      await afterListingChanged();
+    },
+    onError: (e: unknown) => showError(getApiErrorMessage(e)),
+  });
+
+  const uploadListingCoverMut = useMutation({
+    mutationFn: ({ id, file }: { id: string; file: File }) => uploadListingCover(id, file),
+    onSuccess: () => {
+      clearModal();
+      invalidateMine();
+    },
+    onError: (e: unknown) => showError(getApiErrorMessage(e)),
+  });
+
+  const createReviewMut = useMutation({
+    mutationFn: ({ targetUserId, rating, text }: { targetUserId: string; rating: number; text?: string }) =>
+      createDirectReview({ targetUserId, rating, text }),
+    onSuccess: () => {
+      clearModal();
+      setReviewModalOpen(false);
+      setEditingReview(null);
+      if (routeUserId) {
+        void qc.invalidateQueries({ queryKey: queryKeys.reviews(routeUserId) });
+        void qc.invalidateQueries({ queryKey: queryKeys.profile(routeUserId) });
+      }
+    },
+    onError: (e: unknown) => showError(getApiErrorMessage(e)),
+  });
+
+  const updateReviewMut = useMutation({
+    mutationFn: ({ reviewId, targetUserId, rating, text }: { reviewId: string; targetUserId: string; rating: number; text?: string }) =>
+      updateReview(reviewId, targetUserId, { rating, text }),
+    onSuccess: () => {
+      clearModal();
+      setReviewModalOpen(false);
+      setEditingReview(null);
+      if (routeUserId) {
+        void qc.invalidateQueries({ queryKey: queryKeys.reviews(routeUserId) });
+        void qc.invalidateQueries({ queryKey: queryKeys.profile(routeUserId) });
+      }
+    },
+    onError: (e: unknown) => showError(getApiErrorMessage(e)),
+  });
+
+  const deleteReviewMut = useMutation({
+    mutationFn: ({ reviewId, targetUserId }: { reviewId: string; targetUserId: string }) =>
+      deleteReview(reviewId, targetUserId),
+    onSuccess: () => {
+      clearModal();
+      if (routeUserId) {
+        void qc.invalidateQueries({ queryKey: queryKeys.reviews(routeUserId) });
+        void qc.invalidateQueries({ queryKey: queryKeys.profile(routeUserId) });
+      }
     },
     onError: (e: unknown) => showError(getApiErrorMessage(e)),
   });
@@ -784,6 +931,15 @@ export function ProfilePage() {
 
   const galleryPhotoCount = profile?.galleryUrls.length ?? 0;
   const galleryHorizontal = galleryPhotoCount > 2;
+
+  useEffect(() => {
+    if (!profile) return;
+    if (profile.avatarUrl?.trim()) preloadImage(profile.avatarUrl);
+    if (isNarrow && profile.galleryUrls[0]?.trim()) preloadImage(profile.galleryUrls[0]);
+  }, [profile?.id, profile?.avatarUrl, profile?.galleryUrls?.[0], isNarrow]);
+
+  const shouldDeferGalleryPhoto = (index: number) =>
+    isNarrow && (galleryHorizontal ? index > 0 : index > 1);
 
   const onGalleryPhotoShellClick = useCallback(
     (photoIndex: number, wrapperEl: HTMLElement, e: MouseEvent<HTMLElement>) => {
@@ -857,7 +1013,15 @@ export function ProfilePage() {
     return <p className="text-stone-600">Пользователь не указан.</p>;
   }
 
-  if (profileQuery.isPending) return <p className="text-stone-600">Загрузка профиля…</p>;
+  // Состояние загрузки: isPending + isFetching (запрос действительно выполняется)
+  const isActuallyLoading = profileQuery.isPending && profileQuery.fetchStatus !== 'idle';
+  // Запрос не активен: ещё не запускался (например sessionUserId не готов)
+  const isQueryDisabled = profileQuery.fetchStatus === 'idle' && !profileQuery.data;
+
+  if (isActuallyLoading || isQueryDisabled) {
+    return <p className="text-stone-600">Загрузка профиля…</p>;
+  }
+
   if (profileQuery.isError || !profile) {
     return (
       <div className="space-y-3">
@@ -902,10 +1066,18 @@ export function ProfilePage() {
     });
   };
 
-  const onWrite = () => {
+  const onWrite = async () => {
     if (isOwn) return;
-    const id = ensureThreadWith(profile.id);
-    navigate(ROUTES.chatThread(id));
+    if (isUserHidden(profile.id)) {
+      notice.error('Написать нельзя', 'Этот пользователь заблокирован.');
+      return;
+    }
+    try {
+      const id = await ensureThreadWith(profile.id);
+      navigate(ROUTES.chatThread(id));
+    } catch {
+      notice.error('Не удалось открыть чат', 'Возможно, пользователь заблокирован.');
+    }
   };
 
   const onSaveProfile = () => {
@@ -917,7 +1089,7 @@ export function ProfilePage() {
     });
   };
 
-  const galleryShowAddSlot = Boolean(isMineRoute && !mocks && galleryPhotoCount < GALLERY_MAX_PHOTOS);
+  const galleryShowAddSlot = Boolean(isMineRoute && galleryPhotoCount < GALLERY_MAX_PHOTOS);
 
   const galleryPhotoItems = profile.galleryUrls.map((url, i) => (
     <div
@@ -931,8 +1103,11 @@ export function ProfilePage() {
     >
       <GalleryImageTile
         src={url}
+        index={i}
+        deferLoad={shouldDeferGalleryPhoto(i)}
+        scrollRootRef={galleryHorizontal ? galleryStripRef : undefined}
         mediaAuthFallback={!mocks}
-        canDelete={Boolean(isMineRoute && !mocks)}
+        canDelete={Boolean(isMineRoute)}
         deleteBusy={deleteGalleryMut.isPending || uploadGalleryMut.isPending}
         onDeleteClick={() => requestDeleteGalleryAt(i)}
       />
@@ -960,7 +1135,7 @@ export function ProfilePage() {
         ← К объявлениям
       </Link>
 
-      {isMineRoute && !mocks ? (
+      {isMineRoute ? (
         <input
           ref={galleryFileInputRef}
           type="file"
@@ -1010,9 +1185,59 @@ export function ProfilePage() {
         onSubmit={() => createPetMut.mutate(newPetDraftToCreateBody(newPetDraft))}
       />
 
+      <ListingFormModal
+        open={listingModalOpen}
+        onClose={() => {
+          setListingModalOpen(false);
+          setEditingListing(null);
+        }}
+        onSubmit={async (body, isNew, coverFile) => {
+          if (isNew) {
+            const created = await createListingMut.mutateAsync(body as CreateListingBody);
+            if (coverFile && created?.id) {
+              await uploadListingCoverMut.mutateAsync({ id: created.id, file: coverFile });
+            }
+          } else if (editingListing) {
+            await updateListingMut.mutateAsync({ id: editingListing.id, body: body as UpdateListingBody });
+            if (coverFile) {
+              await uploadListingCoverMut.mutateAsync({ id: editingListing.id, file: coverFile });
+            }
+          }
+        }}
+        pending={createListingMut.isPending || updateListingMut.isPending}
+        listing={editingListing}
+        pets={pets}
+        uploadingCover={uploadListingCoverMut.isPending}
+      />
+
+      {!isMineRoute && profile && (
+        <ReviewFormModal
+          open={reviewModalOpen}
+          onClose={() => {
+            setReviewModalOpen(false);
+            setEditingReview(null);
+          }}
+          onSubmit={(rating, text) => {
+            if (editingReview) {
+              updateReviewMut.mutate({
+                reviewId: editingReview.id,
+                targetUserId: profile.id,
+                rating,
+                text: text || undefined,
+              });
+            } else {
+              createReviewMut.mutate({ targetUserId: profile.id, rating, text: text || undefined });
+            }
+          }}
+          pending={createReviewMut.isPending || updateReviewMut.isPending}
+          targetUserName={profile.displayName}
+          existingReview={editingReview}
+        />
+      )}
+
       <div className="flex flex-col gap-6 sm:flex-row sm:items-start">
         <div className="flex flex-col items-start gap-2">
-          {isMineRoute && !mocks ? (
+          {isMineRoute ? (
             <ProfileAvatarHoverActions
               avatarUrl={profile.avatarUrl}
               displayName={profile.displayName}
@@ -1023,16 +1248,52 @@ export function ProfilePage() {
               onDeleteRequest={requestDeleteAvatar}
             />
           ) : (
-            <Avatar src={profile.avatarUrl} alt={profile.displayName} size="lg" mediaAuthFallback={!mocks} />
+            <Avatar
+              src={profile.avatarUrl}
+              alt={profile.displayName}
+              size="lg"
+              priority
+              mediaAuthFallback={!mocks}
+            />
           )}
         </div>
         <div className="min-w-0 flex-1 space-y-2">
           <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
             <h1 className="text-xl font-bold leading-tight text-stone-900 sm:text-2xl">{profile.displayName}</h1>
             {isAuthenticated ? (
-              <Button variant="primary" className="w-full sm:w-auto" disabled={isOwn} onClick={onWrite}>
-                {isOwn ? 'Это вы' : 'Написать'}
-              </Button>
+              isOwn ? (
+                <Button variant="primary" className="w-full sm:w-auto" disabled>
+                  Это вы
+                </Button>
+              ) : (
+                <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+                  <Button
+                    variant="primary"
+                    className="w-full sm:w-auto"
+                    disabled={isBlockedByMe(profile.id)}
+                    onClick={() => void onWrite()}
+                  >
+                    Написать
+                  </Button>
+                  {isBlockedByMe(profile.id) ? (
+                    <Button
+                      variant="secondary"
+                      className="w-full sm:w-auto"
+                      onClick={() => void unblockUser(profile.id)}
+                    >
+                      Разблокировать
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="secondary"
+                      className="w-full sm:w-auto"
+                      onClick={() => setBlockConfirmOpen(true)}
+                    >
+                      Заблокировать
+                    </Button>
+                  )}
+                </div>
+              )
             ) : (
               <div className="flex w-full flex-col items-stretch gap-2 sm:w-auto sm:items-end">
                 <p className="text-xs text-stone-500">Войдите, чтобы написать пользователю.</p>
@@ -1050,7 +1311,7 @@ export function ProfilePage() {
         </div>
       </div>
 
-      {profile.galleryUrls.length > 0 || (isMineRoute && !mocks) ? (
+      {profile.galleryUrls.length > 0 || isMineRoute ? (
         <div className="space-y-3">
           {galleryHorizontal ? (
             galleryShowAddSlot ? (
@@ -1088,7 +1349,7 @@ export function ProfilePage() {
               ) : null}
             </div>
           )}
-          {isMineRoute && !mocks && profile.galleryUrls.length >= GALLERY_MAX_PHOTOS ? (
+          {isMineRoute && profile.galleryUrls.length >= GALLERY_MAX_PHOTOS ? (
             <p className="text-center text-xs font-medium text-amber-800">
               В галерее не более {GALLERY_MAX_PHOTOS} фотографий — удалите снимок, чтобы добавить новый.
             </p>
@@ -1096,7 +1357,7 @@ export function ProfilePage() {
         </div>
       ) : null}
 
-      <div className="-mx-1 flex gap-2 overflow-x-auto border-b border-stone-200 px-1 pb-2">
+      <div className="sticky top-0 z-10 -mx-1 flex gap-2 overflow-x-auto border-b border-stone-200 bg-cream-50/95 px-1 pb-2 pt-1 backdrop-blur-sm [-webkit-overflow-scrolling:touch] [scrollbar-width:none] sm:static sm:bg-transparent sm:backdrop-blur-none [&::-webkit-scrollbar]:hidden">
         <TabButton active={tab === 'about'} onClick={() => setTab('about')}>
           Обо мне
         </TabButton>
@@ -1108,11 +1369,9 @@ export function ProfilePage() {
         <TabButton active={tab === 'reviews'} onClick={() => setTab('reviews')}>
           Отзывы ({reviews.length})
         </TabButton>
-        {isMineRoute ? (
-          <TabButton active={tab === 'listings'} onClick={() => setTab('listings')}>
-            Объявления
-          </TabButton>
-        ) : null}
+        <TabButton active={tab === 'listings'} onClick={() => setTab('listings')}>
+          Объявления
+        </TabButton>
       </div>
 
       {tab === 'about' ? (
@@ -1131,14 +1390,14 @@ export function ProfilePage() {
               )}
             </div>
           </Card>
-          {isMineRoute && !mocks && !editingProfile ? (
+          {isMineRoute && !editingProfile ? (
             <div className="flex flex-wrap gap-2 pt-1">
               <Button variant="primary" type="button" className="w-full sm:w-auto" onClick={openProfileEdit}>
                 Редактировать профиль
               </Button>
             </div>
           ) : null}
-          {isMineRoute && draft && !mocks && editingProfile ? (
+          {isMineRoute && draft && editingProfile ? (
             <Card className="min-w-0 space-y-3 overflow-hidden">
               <h2 className="text-lg font-semibold text-stone-900">Редактирование профиля</h2>
               <label className="block text-sm">
@@ -1179,14 +1438,6 @@ export function ProfilePage() {
               </div>
             </Card>
           ) : null}
-          {isMineRoute && mocks ? (
-            <Card>
-              <p className="text-sm text-stone-600">
-                Демо-режим: данные профиля из моков. Чтобы править через API, отключите <code className="rounded bg-stone-100 px-1">VITE_USE_MOCKS</code> и укажите{' '}
-                <code className="rounded bg-stone-100 px-1">VITE_API_URL</code>.
-              </p>
-            </Card>
-          ) : null}
         </div>
       ) : null}
 
@@ -1194,7 +1445,7 @@ export function ProfilePage() {
         <div className="space-y-8">
           {petsQuery.isPending ? <p className="text-stone-600">Загрузка карточек…</p> : null}
 
-          {isMineRoute && !mocks && !petsQuery.isPending ? (
+          {isMineRoute && !petsQuery.isPending ? (
             pets.length === 0 ? (
               <div className="flex min-h-[min(360px,calc(100vh-12rem))] items-center justify-center px-4">
                 <Button variant="primary" type="button" className="min-h-[48px] px-10 py-3 text-base" onClick={() => setAddPetModalOpen(true)}>
@@ -1210,7 +1461,7 @@ export function ProfilePage() {
             )
           ) : null}
 
-          {pets.length === 0 && !(isMineRoute && !mocks && !petsQuery.isPending) ? (
+          {pets.length === 0 && !(isMineRoute && !petsQuery.isPending) ? (
             <Card>
               <p className="text-stone-600">
                 {isMineRoute ? 'Пока нет карточек питомцев — добавьте первую.' : 'Пока нет карточек питомцев.'}
@@ -1224,7 +1475,7 @@ export function ProfilePage() {
                 <li key={pet.id}>
                   <PetCardBlock
                     pet={pet}
-                    canManage={isMineRoute && !mocks}
+                    canManage={isMineRoute}
                     mediaAuthFallback={!mocks}
                     avatarUploadBusy={uploadPetAvatarMut.isPending && uploadPetAvatarMut.variables?.id === pet.id}
                     avatarDeleteBusy={deletePetAvatarMut.isPending && deletePetAvatarMut.variables === pet.id}
@@ -1260,107 +1511,242 @@ export function ProfilePage() {
       ) : null}
 
       {tab === 'reviews' ? (
-        <ul className="space-y-3">
-          {reviewsQuery.isPending ? <p className="text-stone-600">Загрузка отзывов…</p> : null}
-          {reviews.length === 0 ? (
-            <Card>
-              <p className="text-stone-600">Отзывов пока нет.</p>
-            </Card>
-          ) : (
-            reviews.map((rev) => (
-              <li key={rev.id}>
-                <Card className="space-y-2">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <span className="font-medium text-stone-900">{rev.authorName}</span>
-                    <span className="text-amber-600">
-                      {'★'.repeat(rev.rating)}
-                      {'☆'.repeat(5 - rev.rating)}
-                    </span>
-                  </div>
-                  <p className="text-stone-700">{rev.text}</p>
-                  <p className="text-xs text-stone-400">{rev.createdAt}</p>
-                </Card>
-              </li>
-            ))
+        <div className="space-y-4">
+          {!isMineRoute && isAuthenticated && !isOwn && (
+            <div className="flex justify-end">
+              <Button
+                variant="primary"
+                type="button"
+                onClick={() => setReviewModalOpen(true)}
+                disabled={createReviewMut.isPending}
+              >
+                Оставить отзыв
+              </Button>
+            </div>
           )}
-        </ul>
+          <ul className="space-y-4">
+            {reviewsQuery.isPending ? <p className="text-stone-600">Загрузка отзывов…</p> : null}
+            {reviews.length === 0 ? (
+              <Card className="py-8">
+                <div className="text-center">
+                  <span className="text-4xl">📝</span>
+                  <p className="mt-2 text-stone-600">Отзывов пока нет</p>
+                  {!isMineRoute && isAuthenticated && !isOwn && (
+                    <p className="mt-1 text-sm text-stone-400">Станьте первым, кто оставит отзыв!</p>
+                  )}
+                </div>
+              </Card>
+            ) : (
+              reviews.map((rev) => {
+                const isReviewAuthor = sessionUserId === rev.authorId;
+                return (
+                  <li key={rev.id}>
+                    <Card className="p-5">
+                      <div className="flex gap-4">
+                        <div className="shrink-0">
+                          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-amber-100 to-orange-100 text-lg font-bold text-amber-800">
+                            {rev.authorName.charAt(0).toUpperCase()}
+                          </div>
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <span className="font-semibold text-stone-900">{rev.authorName}</span>
+                            <div className="flex items-center gap-1">
+                              {[1, 2, 3, 4, 5].map((star) => (
+                                <svg
+                                  key={star}
+                                  className={`h-4 w-4 ${star <= rev.rating ? 'text-amber-400 fill-amber-400' : 'text-stone-200 fill-stone-200'}`}
+                                  viewBox="0 0 24 24"
+                                >
+                                  <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+                                </svg>
+                              ))}
+                            </div>
+                          </div>
+                          {rev.text && (
+                            <p className="mt-2 text-stone-700 leading-relaxed">{rev.text}</p>
+                          )}
+                          <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+                            <p className="text-xs text-stone-400">
+                              {formatReviewDate(rev.createdAt)}
+                            </p>
+                            {isReviewAuthor && !isMineRoute && profile && (
+                              <div className="flex gap-2">
+                                <button
+                                  type="button"
+                                  className="text-xs font-medium text-amber-700 hover:text-amber-900 hover:underline"
+                                  onClick={() => {
+                                    setEditingReview(rev);
+                                    setReviewModalOpen(true);
+                                  }}
+                                  disabled={updateReviewMut.isPending || deleteReviewMut.isPending}
+                                >
+                                  Редактировать
+                                </button>
+                                <button
+                                  type="button"
+                                  className="text-xs font-medium text-red-600 hover:text-red-800 hover:underline"
+                                  onClick={() => {
+                                    showConfirm({
+                                      title: 'Удалить отзыв?',
+                                      message: 'Отзыв будет удалён без возможности восстановления.',
+                                      danger: true,
+                                      confirmLabel: 'Удалить',
+                                      onConfirm: () => deleteReviewMut.mutate({ reviewId: rev.id, targetUserId: profile.id }),
+                                    });
+                                  }}
+                                  disabled={updateReviewMut.isPending || deleteReviewMut.isPending}
+                                >
+                                  Удалить
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </Card>
+                  </li>
+                );
+              })
+            )}
+          </ul>
+        </div>
       ) : null}
 
-      {tab === 'listings' && isMineRoute ? (
+      {tab === 'listings' ? (
         <div className="space-y-4">
-          {mocks ? (
-            <Card>
-              <p className="text-sm text-stone-600">В демо-режиме список «мои объявления» с бэкенда недоступен.</p>
-            </Card>
-          ) : myListingsQuery.isPending ? (
-            <p className="text-stone-600">Загрузка объявлений…</p>
+          {isMineRoute ? (
+            // Свои объявления с возможностью управления
+            myListingsQuery.isPending ? (
+              <p className="text-stone-600">Загрузка объявлений…</p>
+            ) : (
+              <>
+                <div className="space-y-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      variant="primary"
+                      type="button"
+                      disabled={
+                        createListingMut.isPending ||
+                        !canCreateMoreListingsFromQuota(
+                          listingQuotaQuery.data,
+                          (myListingsQuery.data ?? []).length,
+                        )
+                      }
+                      onClick={() => {
+                        setEditingListing(null);
+                        setListingModalOpen(true);
+                      }}
+                    >
+                      Создать объявление
+                    </Button>
+                    {listingQuotaQuery.data && (
+                      <span className="text-sm text-stone-600">
+                        {formatListingQuotaUsage(listingQuotaQuery.data)}
+                      </span>
+                    )}
+                  </div>
+                  {!canCreateMoreListingsFromQuota(
+                    listingQuotaQuery.data,
+                    (myListingsQuery.data ?? []).length,
+                  ) && (
+                    <p className="text-sm text-stone-600">
+                      Достигнут лимит объявлений ({listingQuotaQuery.data?.maxListings ?? 1}). Удалите
+                      текущее, чтобы создать новое.
+                    </p>
+                  )}
+                </div>
+                <ul className="space-y-3">
+                  {(myListingsQuery.data ?? []).length === 0 ? (
+                    <Card>
+                      <p className="text-stone-600">У вас пока нет объявлений.</p>
+                    </Card>
+                  ) : (
+                    (myListingsQuery.data ?? []).map((listing) => (
+                      <li key={listing.id}>
+                        <MyListingRow
+                          listing={listing}
+                          onPublish={() => publishListingMut.mutate(listing.id)}
+                          onEdit={() => {
+                            setEditingListing(listing);
+                            setListingModalOpen(true);
+                          }}
+                          onUploadCover={(file) => uploadListingCoverMut.mutate({ id: listing.id, file })}
+                          onDelete={() =>
+                            showConfirm({
+                              title: 'Удалить объявление?',
+                              message: 'Объявление будет удалено без возможности восстановления.',
+                              danger: true,
+                              confirmLabel: 'Удалить',
+                              onConfirm: () => deleteListingMut.mutate(listing.id),
+                            })
+                          }
+                          busy={publishListingMut.isPending || deleteListingMut.isPending || uploadListingCoverMut.isPending}
+                          uploadingCover={uploadListingCoverMut.isPending && uploadListingCoverMut.variables?.id === listing.id}
+                        />
+                      </li>
+                    ))
+                  )}
+                </ul>
+              </>
+            )
           ) : (
-            <>
-              <div className="flex flex-wrap items-center gap-2">
-                <Button
-                  variant="primary"
-                  type="button"
-                  disabled={createListingMut.isPending}
-                  onClick={() =>
-                    createListingMut.mutate({
-                      kind: 'OFFER_SITTER',
-                      title: 'Новое объявление',
-                      description: '',
-                      city: '',
-                      pricePerDay: 0,
-                      periodText: '—',
-                    })
-                  }
-                >
-                  Черновик: возьму на передержку
-                </Button>
-                <Button
-                  variant="primary"
-                  type="button"
-                  disabled={createListingMut.isPending}
-                  onClick={() =>
-                    createListingMut.mutate({
-                      kind: 'NEED_SITTER',
-                      title: 'Новое объявление',
-                      description: '',
-                      city: '',
-                      pricePerDay: 0,
-                      periodText: '—',
-                    })
-                  }
-                >
-                  Черновик: ищу передержку
-                </Button>
-              </div>
-              <ul className="space-y-3">
-                {(myListingsQuery.data ?? []).length === 0 ? (
-                  <Card>
-                    <p className="text-stone-600">У вас пока нет объявлений.</p>
-                  </Card>
-                ) : (
-                  (myListingsQuery.data ?? []).map((listing) => (
-                    <li key={listing.id}>
-                      <MyListingRow
-                        listing={listing}
-                        onPublish={() => publishListingMut.mutate(listing.id)}
-                        onDelete={() =>
-                          showConfirm({
-                            title: 'Удалить объявление?',
-                            message: 'Объявление будет удалено без возможности восстановления.',
-                            danger: true,
-                            confirmLabel: 'Удалить',
-                            onConfirm: () => deleteListingMut.mutate(listing.id),
-                          })
-                        }
-                        busy={publishListingMut.isPending || deleteListingMut.isPending}
-                      />
-                    </li>
-                  ))
-                )}
+            // Объявления другого пользователя (только просмотр)
+            userListingsQuery.isPending ? (
+              <p className="text-stone-600">Загрузка объявлений…</p>
+            ) : (userListingsQuery.data ?? []).length === 0 ? (
+              <Card>
+                <p className="text-stone-600">У пользователя пока нет объявлений.</p>
+              </Card>
+            ) : (
+              <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {(userListingsQuery.data ?? []).map((listing) => (
+                  <li key={listing.id}>
+                    <Link to={ROUTES.listing(listing.id)} className="block">
+                      <Card className="h-full overflow-hidden p-0 transition hover:shadow-lg">
+                        <div className="aspect-[16/10] w-full overflow-hidden bg-stone-100">
+                          {listing.coverImageUrl ? (
+                            <AuthAwareImg
+                              src={listing.coverImageUrl}
+                              alt={listing.title}
+                              className="h-full w-full object-cover"
+                              mediaAuthFallback={!mocks}
+                            />
+                          ) : (
+                            <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-amber-50 to-stone-100">
+                              <span className="text-4xl text-stone-300">📷</span>
+                            </div>
+                          )}
+                        </div>
+                        <div className="p-4">
+                          <p className="font-semibold text-stone-900 line-clamp-2">{listing.title}</p>
+                          <p className="mt-1 text-xs text-stone-500">
+                            {listing.kind === 'offer_sitter' ? 'Предлагает передержку' : 'Ищет передержку'}
+                            {listing.city ? ` · ${listing.city}` : ''}
+                          </p>
+                          {listing.priceRubPerDay ? (
+                            <p className="mt-2 text-sm font-medium text-amber-800">{listing.priceRubPerDay} ₽/сутки</p>
+                          ) : null}
+                        </div>
+                      </Card>
+                    </Link>
+                  </li>
+                ))}
               </ul>
-            </>
+            )
           )}
         </div>
+      ) : null}
+
+      {!isOwn ? (
+        <BlockUserConfirmModal
+          open={blockConfirmOpen}
+          displayName={profile.displayName}
+          onClose={() => setBlockConfirmOpen(false)}
+          onConfirm={() => {
+            void blockUser(profile.id).then(() => setBlockConfirmOpen(false));
+          }}
+        />
       ) : null}
     </div>
   );
@@ -1369,42 +1755,158 @@ export function ProfilePage() {
 function MyListingRow({
   listing,
   onPublish,
+  onEdit,
+  onUploadCover,
   onDelete,
   busy,
+  uploadingCover,
 }: {
   listing: Listing;
   onPublish: () => void;
+  onEdit: () => void;
+  onUploadCover: (file: File) => void;
   onDelete: () => void;
   busy: boolean;
+  uploadingCover?: boolean;
 }) {
+  const coverInputId = useId();
+  const canEdit =
+    listing.publishStatus === 'DRAFT' ||
+    listing.publishStatus === 'REJECTED' ||
+    listing.publishStatus === 'EXPIRED' ||
+    listing.publishStatus === 'ARCHIVED';
+  const canRepublish =
+    listing.publishStatus === 'EXPIRED' || listing.publishStatus === 'ARCHIVED';
+  const expirationHint = getListingExpirationHintForListing(listing);
+  const daysLeftLabel = formatPublishedDaysLeftRu(listing);
+
   return (
-    <Card className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-      <div className="min-w-0">
-        <p className="font-semibold text-stone-900">{listing.title}</p>
-        <p className="text-xs text-stone-500">
-          Статус: <strong>{listingStatusRu(listing.publishStatus)}</strong> · {listing.city || 'город не указан'}
-        </p>
-      </div>
-      <div className="flex flex-wrap gap-2">
-        <Link
-          to={ROUTES.listing(listing.id)}
-          className="inline-flex min-h-[40px] items-center rounded-xl bg-stone-100 px-3 py-2 text-sm font-semibold text-stone-800 ring-1 ring-stone-200 hover:bg-stone-200"
-        >
-          Открыть
-        </Link>
-        {listing.publishStatus === 'DRAFT' ? (
-          <Button variant="primary" type="button" disabled={busy} onClick={onPublish}>
-            Опубликовать
-          </Button>
-        ) : null}
-        <button
-          type="button"
-          disabled={busy}
-          className="rounded-xl px-3 py-2 text-sm font-semibold text-red-700 underline decoration-red-200 hover:bg-red-50"
-          onClick={onDelete}
-        >
-          Удалить
-        </button>
+    <Card className="overflow-hidden p-0">
+      <div className="flex flex-col sm:flex-row">
+        <div className="relative aspect-[16/9] w-full shrink-0 overflow-hidden bg-stone-100 sm:aspect-auto sm:h-32 sm:w-40">
+          {listing.coverImageUrl ? (
+            <AuthAwareImg
+              src={listing.coverImageUrl}
+              alt={listing.title}
+              className="h-full w-full object-cover"
+              mediaAuthFallback
+            />
+          ) : (
+            <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-amber-50 to-stone-100">
+              <span className="text-4xl text-stone-300">📷</span>
+            </div>
+          )}
+          {canEdit && (
+            <label
+              htmlFor={coverInputId}
+              className="absolute inset-0 flex cursor-pointer items-center justify-center bg-stone-900/60 text-xs font-semibold text-white opacity-0 transition hover:opacity-100"
+            >
+              {uploadingCover ? 'Загрузка...' : 'Изменить обложку'}
+            </label>
+          )}
+          <input
+            id={coverInputId}
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            className="sr-only"
+            disabled={uploadingCover || !canEdit}
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              e.target.value = '';
+              if (f) onUploadCover(f);
+            }}
+          />
+        </div>
+        <div className="flex flex-1 flex-col justify-between gap-3 p-4">
+          <div className="min-w-0">
+            <div className="flex items-start justify-between gap-2">
+              <p className="font-semibold text-stone-900">{listing.title}</p>
+              <div className="flex shrink-0 flex-col items-end gap-1">
+                <span
+                  className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${
+                    listing.publishStatus === 'PUBLISHED'
+                      ? 'bg-green-100 text-green-800'
+                      : listing.publishStatus === 'DRAFT'
+                        ? 'bg-stone-100 text-stone-600'
+                        : listing.publishStatus === 'PENDING_REVIEW'
+                          ? 'bg-amber-100 text-amber-800'
+                          : listing.publishStatus === 'REJECTED'
+                            ? 'bg-red-100 text-red-700'
+                            : listing.publishStatus === 'EXPIRED'
+                              ? 'bg-orange-100 text-orange-800'
+                              : 'bg-stone-100 text-stone-600'
+                  }`}
+                >
+                  {listingStatusRu(listing.publishStatus)}
+                </span>
+                {daysLeftLabel && (
+                  <span className="rounded-md bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-900 ring-1 ring-amber-200">
+                    {daysLeftLabel}
+                  </span>
+                )}
+              </div>
+            </div>
+            <p className="mt-1 text-xs text-stone-500">
+              {listing.kind === 'offer_sitter' ? 'Предлагаю передержку' : 'Ищу передержку'} · {listing.city || 'город не указан'}
+              {listing.priceRubPerDay ? ` · ${listing.priceRubPerDay} ₽/сутки` : ''}
+            </p>
+            {expirationHint && (
+              <p
+                className={`mt-1.5 text-xs ${
+                  expirationHint.urgent ? 'text-orange-800' : 'text-amber-800'
+                }`}
+              >
+                <span
+                  className={`inline-flex flex-wrap items-center gap-x-1.5 rounded-lg px-2 py-1 font-medium ring-1 ${
+                    expirationHint.urgent
+                      ? 'bg-orange-50 ring-orange-200'
+                      : 'bg-amber-50 ring-amber-200'
+                  }`}
+                >
+                  <span aria-hidden>⏱</span>
+                  <span>{expirationHint.primary}</span>
+                  {expirationHint.secondary ? (
+                    <span className="font-normal text-stone-600">{expirationHint.secondary}</span>
+                  ) : null}
+                </span>
+              </p>
+            )}
+            {listing.description && (
+              <p className="mt-2 line-clamp-2 text-sm text-stone-600">{listing.description}</p>
+            )}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Link
+              to={ROUTES.listing(listing.id)}
+              className="inline-flex min-h-[36px] items-center rounded-lg bg-stone-100 px-3 py-1.5 text-xs font-semibold text-stone-700 ring-1 ring-stone-200 hover:bg-stone-200"
+            >
+              Просмотр
+            </Link>
+            {canEdit && (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={onEdit}
+                className="inline-flex min-h-[36px] items-center rounded-lg bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-800 ring-1 ring-amber-200 hover:bg-amber-100"
+              >
+                Редактировать
+              </button>
+            )}
+            {(listing.publishStatus === 'DRAFT' || canRepublish) && (
+              <Button variant="primary" type="button" className="text-xs px-3 py-1.5 min-h-[36px]" disabled={busy} onClick={onPublish}>
+                {canRepublish ? 'Опубликовать снова' : 'Опубликовать'}
+              </Button>
+            )}
+            <button
+              type="button"
+              disabled={busy}
+              className="rounded-lg px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50"
+              onClick={onDelete}
+            >
+              Удалить
+            </button>
+          </div>
+        </div>
       </div>
     </Card>
   );

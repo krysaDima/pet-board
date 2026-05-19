@@ -1,13 +1,14 @@
 import type { Listing } from '@/entities/listing/model/types';
 import type { PetCard } from '@/entities/pet/model/types';
 import type { PublicProfile, Review } from '@/entities/user/model/types';
-import type { ListingDetailDto, ListingShortDto, Page, PetCardDto, ReviewDto, UserProfileDto, ListingsQueryParams, UserRole } from '@/api/types';
+import type { ListingDetailDto, ListingShortDto, Page, PetCardDto, ReviewDto, UserProfileDto, ListingsQueryParams, UserRole, CreateReviewBody, CreateDirectReviewBody } from '@/api/types';
 import type { ProfileRole } from '@/entities/user/model/types';
-import { apiGet, getApiBaseUrl, getStoredSession } from '@/api/client';
+import { apiGet, apiPost, apiPut, apiDelete, getApiBaseUrl, getStoredSession } from '@/api/client';
 import { mapListingDetailDtoToListing, mapPetDto } from '@/api/meApi';
 import { mockListings, mockProfiles, mockReviewsByUser, mockPets } from '@/api/mocks/data';
 import { isUuidString } from '@/shared/lib/isUuid';
-import { resolveMediaUrl, userProfileAvatarProxyUrl, userProfileGalleryProxyUrl } from '@/shared/lib/mediaUrl';
+import { resolveMediaUrl, userProfileAvatarProxyUrl, userProfileGalleryProxyUrl, listingCoverProxyUrl } from '@/shared/lib/mediaUrl';
+import { generateUniqueId } from '@/shared/lib/generateId';
 
 /** Только явный флаг: URL API по умолчанию непустой (`getApiBaseUrl`), иначе медиа резолвились бы относительно фронта. */
 export const USE_MOCKS = import.meta.env.VITE_USE_MOCKS === 'true';
@@ -81,12 +82,13 @@ function mapProfile(dto: UserProfileDto): PublicProfile {
 
 /** Преобразование ReviewDto → Review */
 function mapReview(dto: ReviewDto): Review {
+  const nestedAuthor = (dto as ReviewDto & { author?: { id?: string; displayName?: string | null } }).author;
   return {
     id: dto.id,
-    authorId: dto.authorId,
-    authorName: dto.authorName,
+    authorId: dto.authorId ?? nestedAuthor?.id ?? '',
+    authorName: dto.authorName ?? nestedAuthor?.displayName ?? 'Пользователь',
     rating: dto.rating,
-    text: dto.text,
+    text: dto.text ?? '',
     createdAt: dto.createdAt,
   };
 }
@@ -94,6 +96,7 @@ function mapReview(dto: ReviewDto): Review {
 /** Элемент страницы ленты → Listing */
 function mapListingShort(dto: ListingShortDto): Listing {
   const base = getApiBaseUrl();
+  const hasCover = Boolean(dto.coverUrl?.trim());
   return {
     id: dto.id,
     authorId: dto.authorId,
@@ -103,7 +106,11 @@ function mapListingShort(dto: ListingShortDto): Listing {
     city: dto.city,
     priceRubPerDay: num(dto.pricePerDay),
     periodText: '—',
-    coverImageUrl: resolveMediaUrl(dto.coverUrl ?? '', base),
+    coverImageUrl: USE_MOCKS
+      ? resolveMediaUrl(dto.coverUrl ?? '', base)
+      : hasCover
+        ? listingCoverProxyUrl(dto.id, base, dto.coverUrl!)
+        : '',
     authorPreview: {
       displayName: dto.authorName ?? 'Пользователь',
       avatarUrl: USE_MOCKS
@@ -163,7 +170,21 @@ export async function fetchMyProfile(): Promise<PublicProfile | undefined> {
     await delay(220);
     const id = getStoredSession()?.userId;
     if (!id) return undefined;
-    return mockProfiles[id];
+    const existing = mockProfiles[id];
+    if (existing) return existing;
+    // Для mock режима создаём временный профиль если userId не в демо-данных
+    const fallbackProfile: PublicProfile = {
+      id,
+      displayName: 'Пользователь',
+      avatarUrl: '',
+      bio: '',
+      galleryUrls: [],
+      roles: ['seeker'],
+      ratingAvg: 0,
+      reviewCount: 0,
+    };
+    mockProfiles[id] = fallbackProfile;
+    return fallbackProfile;
   }
 
   try {
@@ -212,7 +233,24 @@ export async function fetchMyPets(): Promise<PetCard[]> {
 export async function fetchProfile(userId: string): Promise<PublicProfile | undefined> {
   if (USE_MOCKS) {
     await delay(220);
-    return mockProfiles[userId];
+    const existing = mockProfiles[userId];
+    if (existing) return existing;
+    // В mock режиме создаём заглушку для неизвестных пользователей
+    if (isUuidString(userId)) {
+      const fallbackProfile: PublicProfile = {
+        id: userId,
+        displayName: 'Пользователь',
+        avatarUrl: '',
+        bio: '',
+        galleryUrls: [],
+        roles: ['seeker'],
+        ratingAvg: 0,
+        reviewCount: 0,
+      };
+      mockProfiles[userId] = fallbackProfile;
+      return fallbackProfile;
+    }
+    return undefined;
   }
 
   if (!isUuidString(userId)) return undefined;
@@ -235,8 +273,8 @@ export async function fetchReviews(userId: string): Promise<Review[]> {
   if (!isUuidString(userId)) return [];
 
   try {
-    const dtos = await apiGet<ReviewDto[]>(`/users/${userId}/reviews`, false);
-    return dtos.map(mapReview);
+    const page = await apiGet<Page<ReviewDto>>(`/users/${userId}/reviews`, false);
+    return page.content.map(mapReview);
   } catch {
     return [];
   }
@@ -257,4 +295,111 @@ export async function fetchPets(userId: string): Promise<PetCard[]> {
   } catch {
     return [];
   }
+}
+
+/** Публичные объявления пользователя (только опубликованные) */
+export async function fetchUserListings(userId: string): Promise<Listing[]> {
+  if (USE_MOCKS) {
+    await delay(180);
+    return mockListings.filter((l) => l.authorId === userId);
+  }
+
+  if (!isUuidString(userId)) return [];
+
+  try {
+    const page = await apiGet<Page<ListingShortDto>>(`/users/${userId}/listings`, false);
+    return page.content.map(mapListingShort);
+  } catch {
+    return [];
+  }
+}
+
+/** Создание отзыва (требует завершённого бронирования) */
+export async function createReview(body: CreateReviewBody): Promise<Review> {
+  if (USE_MOCKS) {
+    await delay(300);
+    const session = getStoredSession();
+    const authorId = session?.userId ?? 'mock-user';
+    const author = mockProfiles[authorId];
+    const newReview: Review = {
+      id: generateUniqueId('review'),
+      authorId,
+      authorName: author?.displayName ?? 'Пользователь',
+      rating: body.rating,
+      text: body.text ?? '',
+      createdAt: new Date().toISOString().split('T')[0],
+    };
+    return newReview;
+  }
+
+  const dto = await apiPost<ReviewDto>('/reviews', body, true);
+  return mapReview(dto);
+}
+
+/** Создание отзыва напрямую пользователю (для демо без бронирования) */
+export async function createDirectReview(body: CreateDirectReviewBody): Promise<Review> {
+  if (USE_MOCKS) {
+    await delay(300);
+    const session = getStoredSession();
+    const authorId = session?.userId ?? 'mock-user';
+    const author = mockProfiles[authorId];
+    const newReview: Review = {
+      id: generateUniqueId('review'),
+      authorId,
+      authorName: author?.displayName ?? 'Пользователь',
+      rating: body.rating,
+      text: body.text ?? '',
+      createdAt: new Date().toISOString().split('T')[0],
+    };
+    if (mockReviewsByUser[body.targetUserId]) {
+      mockReviewsByUser[body.targetUserId].unshift(newReview);
+    } else {
+      mockReviewsByUser[body.targetUserId] = [newReview];
+    }
+    return newReview;
+  }
+
+  const dto = await apiPost<ReviewDto>('/reviews/direct', body, true);
+  return mapReview(dto);
+}
+
+/** Обновление отзыва (только автор может редактировать) */
+export async function updateReview(reviewId: string, targetUserId: string, body: { rating: number; text?: string }): Promise<Review> {
+  if (USE_MOCKS) {
+    await delay(300);
+    const session = getStoredSession();
+    const authorId = session?.userId ?? 'mock-user';
+    const reviews = mockReviewsByUser[targetUserId];
+    if (!reviews) throw new Error('Отзывы не найдены');
+    const idx = reviews.findIndex((r) => r.id === reviewId);
+    if (idx === -1) throw new Error('Отзыв не найден');
+    if (reviews[idx].authorId !== authorId) throw new Error('Вы не можете редактировать этот отзыв');
+    reviews[idx] = {
+      ...reviews[idx],
+      rating: body.rating,
+      text: body.text ?? '',
+    };
+    return reviews[idx];
+  }
+
+  const dto = await apiPut<ReviewDto>(`/reviews/${reviewId}`, body);
+  return mapReview(dto);
+}
+
+/** Удаление отзыва (только автор может удалить) */
+export async function deleteReview(reviewId: string, targetUserId: string): Promise<void> {
+  if (USE_MOCKS) {
+    await delay(200);
+    const session = getStoredSession();
+    const authorId = session?.userId ?? 'mock-user';
+    const reviews = mockReviewsByUser[targetUserId];
+    if (!reviews) return;
+    const idx = reviews.findIndex((r) => r.id === reviewId);
+    if (idx === -1) return;
+    if (reviews[idx].authorId !== authorId) throw new Error('Вы не можете удалить этот отзыв');
+    reviews.splice(idx, 1);
+    return;
+  }
+
+  await apiDelete(`/reviews/${reviewId}`);
 }

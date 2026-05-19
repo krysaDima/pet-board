@@ -6,6 +6,8 @@ type Props = {
   size?: 'sm' | 'md' | 'lg';
   /** Если true, при ошибке загрузки картинки пробуем скачать файл с Authorization (защищённые URL API). */
   mediaAuthFallback?: boolean;
+  /** Главный аватар на экране — eager и высокий приоритет (мобильный профиль). */
+  priority?: boolean;
   /** Дополнительные классы (например обводку снимают при обёртке с собственной рамкой). */
   className?: string;
 };
@@ -19,7 +21,14 @@ const dims: Record<'sm' | 'md' | 'lg', string> = {
 /**
  * Превью аватара пользователя или питомца; при пустой ссылке — инициал из alt.
  */
-export function Avatar({ src, alt, size = 'md', mediaAuthFallback = false, className = '' }: Props) {
+export function Avatar({
+  src,
+  alt,
+  size = 'md',
+  mediaAuthFallback = false,
+  priority = false,
+  className = '',
+}: Props) {
   const { displaySrc, onImgError } = useAuthAwareImg(src, { authFallback: mediaAuthFallback });
   const url = displaySrc.trim();
   const cls = dims[size];
@@ -37,12 +46,17 @@ export function Avatar({ src, alt, size = 'md', mediaAuthFallback = false, class
     );
   }
 
+  const eager = priority || size === 'lg';
+
   return (
     <img
       src={url}
       alt={alt}
       className={`shrink-0 rounded-2xl object-cover shadow-md ring-2 ring-white ${cls.split(' ').slice(0, 2).join(' ')}${extra}`}
-      loading="lazy"
+      loading={eager ? 'eager' : 'lazy'}
+      decoding="async"
+      fetchPriority={priority ? 'high' : undefined}
+      sizes={size === 'lg' ? '96px' : size === 'md' ? '56px' : '40px'}
       onError={onImgError}
     />
   );

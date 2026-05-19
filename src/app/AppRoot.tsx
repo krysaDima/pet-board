@@ -2,6 +2,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter } from 'react-router';
 import { ErrorBoundary } from '@/app/ErrorBoundary';
 import { AuthProvider } from '@/app/auth/AuthContext';
+import { AppNoticeProvider } from '@/app/notice/AppNoticeProvider';
+import { BlockedUsersProvider } from '@/app/block/BlockedUsersProvider';
 import { ChatProvider } from '@/app/chat/ChatProvider';
 import { AppRouter } from '@/app/router/AppRouter';
 
@@ -27,9 +29,13 @@ export function AppRoot() {
       <QueryClientProvider client={queryClient}>
         <BrowserRouter basename={routerBasename()}>
           <AuthProvider>
-            <ChatProvider>
-              <AppRouter />
-            </ChatProvider>
+            <AppNoticeProvider>
+              <BlockedUsersProvider>
+                <ChatProvider>
+                  <AppRouter />
+                </ChatProvider>
+              </BlockedUsersProvider>
+            </AppNoticeProvider>
           </AuthProvider>
         </BrowserRouter>
       </QueryClientProvider>

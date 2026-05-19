@@ -7,6 +7,7 @@ import type {
   CreateListingBody,
   CreatePetBody,
   ListingDetailDto,
+  ListingQuotaDto,
   PetCardDto,
   UpdateListingBody,
   UpdatePetBody,
@@ -15,9 +16,12 @@ import type {
 } from '@/api/types';
 import { deriveUserRoleFromListings } from '@/shared/lib/deriveUserRoleFromListings';
 import type { Listing } from '@/entities/listing/model/types';
+import type { ListingQuota } from '@/entities/listing/model/quota';
+import { DEFAULT_FREE_LISTING_MAX } from '@/entities/listing/lib/listingLimits';
 import type { PetCard } from '@/entities/pet/model/types';
 import type { PublicProfile } from '@/entities/user/model/types';
-import { resolveMediaUrl, userProfileAvatarProxyUrl, userProfileGalleryProxyUrl, petAvatarProxyUrl } from '@/shared/lib/mediaUrl';
+import { compressProfileImageForUpload } from '@/shared/lib/compressProfileImage';
+import { resolveMediaUrl, userProfileAvatarProxyUrl, userProfileGalleryProxyUrl, petAvatarProxyUrl, listingCoverProxyUrl } from '@/shared/lib/mediaUrl';
 
 const USE_MOCKS = import.meta.env.VITE_USE_MOCKS === 'true';
 
@@ -80,6 +84,7 @@ function mapProfile(dto: UserProfileDto): PublicProfile {
 export function mapListingDetailDtoToListing(dto: ListingDetailDto): Listing {
   const base = getApiBaseUrl();
   const embeddedAuthor = dto.author ? mapProfile(dto.author) : undefined;
+  const hasCover = Boolean(dto.coverUrl?.trim());
   return {
     id: dto.id,
     authorId: dto.author?.id ?? '',
@@ -89,10 +94,16 @@ export function mapListingDetailDtoToListing(dto: ListingDetailDto): Listing {
     city: dto.city,
     priceRubPerDay: num(dto.pricePerDay),
     periodText: dto.periodText ?? '',
-    coverImageUrl: resolveMediaUrl(dto.coverUrl ?? '', base),
+    coverImageUrl: USE_MOCKS
+      ? resolveMediaUrl(dto.coverUrl ?? '', base)
+      : hasCover
+        ? listingCoverProxyUrl(dto.id, base, dto.coverUrl!)
+        : '',
     petId: dto.pet?.id,
     embeddedAuthor,
     publishStatus: dto.status,
+    publishedAt: dto.publishedAt ?? undefined,
+    expiresAt: dto.expiresAt ?? undefined,
   };
 }
 
@@ -156,12 +167,34 @@ function assertProfileMediaFile(file: File): void {
   if (!okType && !(file.type === '' && okExt)) throw new Error('Для профиля допустимы JPEG, PNG, WebP и GIF');
 }
 
+async function prepareProfileUploadFile(file: File): Promise<File> {
+  try {
+    const compressed = await compressProfileImageForUpload(file);
+    assertProfileMediaFile(compressed);
+    return compressed;
+  } catch {
+    assertProfileMediaFile(file);
+    return file;
+  }
+}
+
+async function preparePetAvatarUploadFile(file: File): Promise<File> {
+  try {
+    const compressed = await compressProfileImageForUpload(file);
+    assertPetImageFile(compressed);
+    return compressed;
+  } catch {
+    assertPetImageFile(file);
+    return file;
+  }
+}
+
 /** Загрузка своего аватара (`POST /me/profile/avatar`). */
 export async function uploadMyProfileAvatar(file: File): Promise<PublicProfile> {
   mocksGuard();
-  assertProfileMediaFile(file);
+  const prepared = await prepareProfileUploadFile(file);
   const fd = new FormData();
-  fd.append('file', file);
+  fd.append('file', prepared);
   const dto = await apiPostMultipart<UserProfileDto>('/me/profile/avatar', fd);
   if (dto) return mapProfile(dto);
   const refreshed = await apiGet<UserProfileDto>('/me/profile');
@@ -178,9 +211,9 @@ export async function deleteMyProfileAvatar(): Promise<PublicProfile> {
 /** Загрузка изображения в галерею профиля (`POST /me/profile/gallery`, multipart). */
 export async function uploadMyProfileGalleryImage(file: File): Promise<PublicProfile> {
   mocksGuard();
-  assertProfileMediaFile(file);
+  const prepared = await prepareProfileUploadFile(file);
   const fd = new FormData();
-  fd.append('file', file);
+  fd.append('file', prepared);
   const dto = await apiPostMultipart<UserProfileDto>('/me/profile/gallery', fd);
   if (dto) return mapProfile(dto);
   const refreshed = await apiGet<UserProfileDto>('/me/profile');
@@ -215,9 +248,9 @@ export async function deleteMyPet(petId: string): Promise<void> {
 
 export async function uploadPetAvatar(petId: string, file: File): Promise<PetCard> {
   mocksGuard();
-  assertPetImageFile(file);
+  const prepared = await preparePetAvatarUploadFile(file);
   const fd = new FormData();
-  fd.append('file', file);
+  fd.append('file', prepared);
   const dto = await apiPostMultipart<PetCardDto>(`/me/pets/${petId}/avatar`, fd);
   if (dto) return mapPetDto(dto);
   const list = await apiGet<PetCardDto[]>('/me/pets');
@@ -237,6 +270,43 @@ export async function fetchMyListings(): Promise<Listing[]> {
   mocksGuard();
   const dtos = await apiGet<ListingDetailDto[]>('/me/listings');
   return dtos.map(mapListingDetailDtoToListing);
+}
+
+function mapListingQuotaDto(dto: ListingQuotaDto): ListingQuota {
+  return {
+    plan: dto.plan,
+    maxListings: dto.maxListings,
+    currentCount: dto.currentCount,
+    canCreateMore: dto.canCreateMore,
+    subscription: {
+      upgradeEnabled: dto.subscription.upgradeEnabled,
+      active: dto.subscription.active,
+      maxListingsWhenSubscribed: dto.subscription.maxListingsWhenSubscribed,
+      hint: dto.subscription.hint,
+    },
+  };
+}
+
+/** Квота объявлений по тарифу (FREE / будущая подписка). */
+export async function fetchMyListingQuota(): Promise<ListingQuota> {
+  if (USE_MOCKS) {
+    const count = 0;
+    return {
+      plan: 'FREE',
+      maxListings: DEFAULT_FREE_LISTING_MAX,
+      currentCount: count,
+      canCreateMore: count < DEFAULT_FREE_LISTING_MAX,
+      subscription: {
+        upgradeEnabled: false,
+        active: false,
+        maxListingsWhenSubscribed: 10,
+        hint: null,
+      },
+    };
+  }
+  mocksGuard();
+  const dto = await apiGet<ListingQuotaDto>('/me/listings/quota');
+  return mapListingQuotaDto(dto);
 }
 
 export async function createMyListing(body: CreateListingBody): Promise<Listing> {
@@ -270,4 +340,34 @@ export async function syncMyProfileRoleFromListings(): Promise<PublicProfile | u
   if (!role) return undefined;
   const dto = await apiPut<UserProfileDto>('/me/profile', { role });
   return mapProfile(dto);
+}
+
+const LISTING_COVER_MAX_BYTES = 5 * 1024 * 1024;
+
+function assertListingCoverFile(file: File): void {
+  if (!file.size) throw new Error('Файл пустой');
+  if (file.size > LISTING_COVER_MAX_BYTES) throw new Error('Изображение больше 5 МБ');
+  const okType = /^image\/(jpeg|jpg|png|webp)$/i.test(file.type);
+  const ext = (file.name.split('.').pop() ?? '').toLowerCase();
+  const okExt = ['jpg', 'jpeg', 'png', 'webp'].includes(ext);
+  if (!okType && !(file.type === '' && okExt)) throw new Error('Для обложки допустимы JPEG, PNG и WebP');
+}
+
+/** Загрузка обложки объявления (`POST /me/listings/{id}/cover`). */
+export async function uploadListingCover(listingId: string, file: File): Promise<Listing> {
+  mocksGuard();
+  assertListingCoverFile(file);
+  const fd = new FormData();
+  fd.append('file', file);
+  const dto = await apiPostMultipart<ListingDetailDto>(`/me/listings/${listingId}/cover`, fd);
+  if (dto) return mapListingDetailDtoToListing(dto);
+  const refreshed = await apiGet<ListingDetailDto>(`/me/listings/${listingId}`);
+  return mapListingDetailDtoToListing(refreshed);
+}
+
+/** Удаление обложки объявления. */
+export async function deleteListingCover(listingId: string): Promise<Listing> {
+  mocksGuard();
+  const dto = await apiDelete<ListingDetailDto>(`/me/listings/${listingId}/cover`);
+  return mapListingDetailDtoToListing(dto);
 }

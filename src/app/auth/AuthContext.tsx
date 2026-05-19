@@ -9,7 +9,6 @@ import {
   isRefreshTokenExpired,
   ApiError,
 } from '@/api/client';
-import { MOCK_CURRENT_USER_ID } from '@/api/mocks/data';
 
 type AuthContextValue = {
   isAuthenticated: boolean;
@@ -20,7 +19,6 @@ type AuthContextValue = {
   login: (data: LoginRequest, rememberMe?: boolean) => Promise<void>;
   logout: () => void;
   clearError: () => void;
-  demoLogin: () => void;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -36,8 +34,7 @@ function getInitialSession(): StoredSession | null {
 }
 
 /**
- * Провайдер авторизации.
- * Поддерживает реальную JWT-авторизацию и демо-режим (для разработки без бэкенда).
+ * Провайдер JWT-авторизации.
  */
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<StoredSession | null>(getInitialSession);
@@ -110,19 +107,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setError(null);
   }, []);
 
-  const demoLogin = useCallback(() => {
-    const demoSession: StoredSession = {
-      userId: MOCK_CURRENT_USER_ID,
-      accessToken: 'demo-token',
-      refreshToken: 'demo-refresh',
-      accessTokenExpiresAt: Date.now() + 24 * 60 * 60 * 1000,
-      refreshTokenExpiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000,
-    };
-    saveSession(demoSession, true);
-    setSession(demoSession);
-    setError(null);
-  }, []);
-
   const value = useMemo(
     () => ({
       isAuthenticated,
@@ -133,9 +117,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       login,
       logout,
       clearError,
-      demoLogin,
     }),
-    [isAuthenticated, userId, isLoading, error, register, login, logout, clearError, demoLogin],
+    [isAuthenticated, userId, isLoading, error, register, login, logout, clearError],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

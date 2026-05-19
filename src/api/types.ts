@@ -76,6 +76,22 @@ export type ListingDto = ListingDetailDto;
 /** Статус объявления (жизненный цикл модерации) */
 export type ListingStatusApi = 'DRAFT' | 'PENDING_REVIEW' | 'PUBLISHED' | 'REJECTED' | 'ARCHIVED' | 'EXPIRED';
 
+export type UserPlanApi = 'FREE' | 'SUBSCRIBED';
+
+/** Квота объявлений `GET /me/listings/quota`. */
+export type ListingQuotaDto = {
+  plan: UserPlanApi;
+  maxListings: number;
+  currentCount: number;
+  canCreateMore: boolean;
+  subscription: {
+    upgradeEnabled: boolean;
+    active: boolean;
+    maxListingsWhenSubscribed: number;
+    hint: string | null;
+  };
+};
+
 /** Элемент страницы публичной ленты `GET /listings` */
 export type ListingShortDto = {
   id: string;
@@ -106,6 +122,8 @@ export type ListingDetailDto = {
   author: UserProfileDto;
   pet?: PetCardDto | null;
   createdAt: string;
+  publishedAt?: string | null;
+  expiresAt?: string | null;
 };
 
 /** Профиль пользователя с API (`UserProfileResponse`) */
@@ -190,6 +208,30 @@ export type CreateListingBody = {
   periodText?: string;
   coverUrl?: string;
   petId?: string;
+  /** Контактный телефон */
+  contactPhone?: string;
+  /** Контактный Telegram */
+  contactTelegram?: string;
+  /** Условия содержания */
+  conditions?: string;
+  /** Опыт работы с животными */
+  experience?: string;
+  /** Автоматическое снятие с публикации (ISO). */
+  expiresAt?: string;
 };
 
 export type UpdateListingBody = Partial<Omit<CreateListingBody, 'kind'>>;
+
+/** Запрос на создание отзыва */
+export type CreateReviewBody = {
+  bookingId: string;
+  rating: number;
+  text?: string;
+};
+
+/** Запрос на создание отзыва без бронирования (для демо) */
+export type CreateDirectReviewBody = {
+  targetUserId: string;
+  rating: number;
+  text?: string;
+};

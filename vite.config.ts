@@ -16,7 +16,28 @@ function appBase(): string {
 // https://vite.dev/config/
 export default defineConfig({
   base: appBase(),
-  plugins: [react(), tailwindcss()],
+  /* sockjs-client (чаты) ссылается на Node-глобал `global` — без этого приложение не монтируется в браузере. */
+  define: {
+    global: 'globalThis',
+  },
+  optimizeDeps: {
+    esbuildOptions: {
+      define: {
+        global: 'globalThis',
+      },
+    },
+  },
+  plugins: [
+    react(),
+    tailwindcss(),
+    {
+      name: 'html-favicon-base',
+      transformIndexHtml(html) {
+        const base = appBase();
+        return html.replaceAll('%BASE_URL%', base);
+      },
+    },
+  ],
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
