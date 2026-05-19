@@ -39,20 +39,42 @@ export function resolveMediaUrl(pathOrUrl: string | null | undefined, apiOrigin:
   return upgradeHttpToHttpsIfPageIsHttps(out);
 }
 
-/**
- * URL аватара через прокси API (тот же origin, что и JSON) — надёжнее прямых ссылок на Яндекс.Диск из браузера.
- */
-export function userProfileAvatarProxyUrl(userId: string, apiOrigin: string = getApiBaseUrl()): string {
-  const b = apiOrigin.replace(/\/+$/, '');
-  return `${b}/api/v1/users/${userId}/avatar`;
+/** Простой числовой хеш строки для cache-busting (детерминированный — одинаковый URL даёт одинаковый хеш). */
+function urlVersionHash(s: string): string {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) {
+    h = ((h << 5) - h + s.charCodeAt(i)) | 0;
+  }
+  return Math.abs(h).toString(36);
 }
 
-/** Снимок галереи по индексу (порядок как в `galleryUrls` ответа профиля). */
+/**
+ * URL аватара через прокси API (тот же origin, что и JSON) — надёжнее прямых ссылок на Яндекс.Диск из браузера.
+ * @param rawUrl оригинальный URL из DTO (используется для cache-busting при замене аватара)
+ */
+export function userProfileAvatarProxyUrl(
+  userId: string,
+  apiOrigin: string = getApiBaseUrl(),
+  rawUrl?: string,
+): string {
+  const b = apiOrigin.replace(/\/+$/, '');
+  const base = `${b}/api/v1/users/${userId}/avatar`;
+  if (rawUrl) return `${base}?v=${urlVersionHash(rawUrl)}`;
+  return base;
+}
+
+/**
+ * Снимок галереи по индексу (порядок как в `galleryUrls` ответа профиля).
+ * @param rawUrl оригинальный URL из DTO (используется для cache-busting)
+ */
 export function userProfileGalleryProxyUrl(
   userId: string,
   index: number,
   apiOrigin: string = getApiBaseUrl(),
+  rawUrl?: string,
 ): string {
   const b = apiOrigin.replace(/\/+$/, '');
-  return `${b}/api/v1/users/${userId}/gallery/${index}`;
+  const base = `${b}/api/v1/users/${userId}/gallery/${index}`;
+  if (rawUrl) return `${base}?v=${urlVersionHash(rawUrl)}`;
+  return base;
 }

@@ -69,9 +69,9 @@ function mapProfile(dto: UserProfileDto): PublicProfile {
   return {
     id: dto.id,
     displayName: dto.displayName ?? '',
-    avatarUrl: hasAvatar ? userProfileAvatarProxyUrl(dto.id, base) : '',
+    avatarUrl: hasAvatar ? userProfileAvatarProxyUrl(dto.id, base, dto.avatarUrl!) : '',
     bio: dto.bio ?? '',
-    galleryUrls: rawGallery.map((_, i) => userProfileGalleryProxyUrl(dto.id, i, base)),
+    galleryUrls: rawGallery.map((u, i) => userProfileGalleryProxyUrl(dto.id, i, base, u)),
     galleryCanonicalUrls: rawGallery,
     roles: mapRole(dto.role),
     ratingAvg: num(dto.ratingAvg) ?? 0,
@@ -109,7 +109,7 @@ function mapListingShort(dto: ListingShortDto): Listing {
       avatarUrl: USE_MOCKS
         ? resolveMediaUrl(dto.authorAvatarUrl ?? '', base)
         : dto.authorAvatarUrl?.trim()
-          ? userProfileAvatarProxyUrl(dto.authorId, base)
+          ? userProfileAvatarProxyUrl(dto.authorId, base, dto.authorAvatarUrl!)
           : '',
       ratingAvg: num(dto.authorRating) ?? 0,
       reviewCount: 0,
