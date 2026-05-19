@@ -17,7 +17,7 @@ import { deriveUserRoleFromListings } from '@/shared/lib/deriveUserRoleFromListi
 import type { Listing } from '@/entities/listing/model/types';
 import type { PetCard } from '@/entities/pet/model/types';
 import type { PublicProfile } from '@/entities/user/model/types';
-import { resolveMediaUrl, userProfileAvatarProxyUrl, userProfileGalleryProxyUrl } from '@/shared/lib/mediaUrl';
+import { resolveMediaUrl, userProfileAvatarProxyUrl, userProfileGalleryProxyUrl, petAvatarProxyUrl } from '@/shared/lib/mediaUrl';
 
 const USE_MOCKS = import.meta.env.VITE_USE_MOCKS === 'true';
 
@@ -98,11 +98,27 @@ export function mapListingDetailDtoToListing(dto: ListingDetailDto): Listing {
 
 export function mapPetDto(dto: PetCardDto): PetCard {
   const base = getApiBaseUrl();
+  if (USE_MOCKS) {
+    return {
+      id: dto.id,
+      name: dto.name,
+      species: dto.species ?? '',
+      age: dto.age ?? '',
+      avatarUrl: resolveMediaUrl(dto.avatarUrl ?? '', base),
+      description: dto.description ?? '',
+      habits: dto.habits ?? '',
+      vaccinations: dto.vaccinations ?? '',
+      allergies: dto.allergies ?? '',
+      vetNotes: dto.vetNotes ?? '',
+    };
+  }
+  const hasAvatar = Boolean(dto.avatarUrl?.trim());
   return {
     id: dto.id,
     name: dto.name,
     species: dto.species ?? '',
-    avatarUrl: resolveMediaUrl(dto.avatarUrl ?? '', base),
+    age: dto.age ?? '',
+    avatarUrl: hasAvatar ? petAvatarProxyUrl(dto.id, base, dto.avatarUrl!) : '',
     description: dto.description ?? '',
     habits: dto.habits ?? '',
     vaccinations: dto.vaccinations ?? '',

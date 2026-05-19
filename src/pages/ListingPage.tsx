@@ -10,6 +10,7 @@ import { Button } from '@/shared/ui/Button';
 import { Card } from '@/shared/ui/Card';
 import { StarsRating } from '@/shared/ui/StarsRating';
 import { Avatar } from '@/shared/ui/Avatar';
+import { AuthAwareImg } from '@/shared/ui/AuthAwareImg';
 
 function kindLabel(kind: 'offer_sitter' | 'need_sitter'): string {
   return kind === 'offer_sitter' ? 'Предлагаю передержку' : 'Нужна передержка';
@@ -75,7 +76,13 @@ export function ListingPage() {
       </Link>
       <article className="overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-sm">
         <div className="aspect-[4/3] max-h-72 w-full overflow-hidden sm:aspect-[21/9] sm:max-h-80">
-          <img src={listing.coverImageUrl} alt="" className="h-full w-full object-cover" loading="lazy" />
+          <AuthAwareImg
+            src={listing.coverImageUrl}
+            alt={listing.title ? `Обложка: ${listing.title}` : 'Обложка объявления'}
+            className="h-full w-full object-cover"
+            loading="lazy"
+            mediaAuthFallback={!isApiMocksMode()}
+          />
         </div>
         <div className="space-y-4 p-4 sm:p-8">
           <span className="inline-block rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-900">

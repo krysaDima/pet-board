@@ -143,6 +143,8 @@ export type PetCardDto = {
   vaccinations?: string | null;
   allergies?: string | null;
   vetNotes?: string | null;
+  /** Возраст произвольной строкой, напр. «3 года» (опционально; если поля нет в API — отправляется только когда заполнено). */
+  age?: string | null;
   createdAt?: string;
 };
 
@@ -173,6 +175,8 @@ export type CreatePetBody = {
   vaccinations?: string;
   allergies?: string;
   vetNotes?: string;
+  /** Произвольная строка возраста. */
+  age?: string;
 };
 
 export type UpdatePetBody = Partial<CreatePetBody>;

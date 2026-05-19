@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useId, useRef, useState, type MouseEvent, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { Link, useLocation, useNavigate, useParams } from 'react-router';
 import {
   fetchMyPets,
@@ -11,7 +12,7 @@ import {
   canFetchPublicUserProfile,
   isApiMocksMode,
 } from '@/api/listingsApi';
-import type { UpdatePetBody } from '@/api/types';
+import type { UpdatePetBody, CreatePetBody } from '@/api/types';
 import {
   createMyListing,
   createMyPet,
@@ -43,6 +44,7 @@ import { StarsRating } from '@/shared/ui/StarsRating';
 import { AuthAwareImg } from '@/shared/ui/AuthAwareImg';
 import { Avatar } from '@/shared/ui/Avatar';
 import { CenterModal } from '@/shared/ui/CenterModal';
+import { PET_BREED_SUGGESTIONS_RU } from '@/shared/constants/petBreedRu';
 
 /** Максимум фотографий в галерее профиля (ограничение на клиенте). */
 const GALLERY_MAX_PHOTOS = 12;
@@ -62,6 +64,337 @@ function listingStatusRu(s: ListingPublishStatus | undefined): string {
     EXPIRED: 'Истекло',
   };
   return m[s] ?? s;
+}
+
+/** Поля модалки «Новый питомец»; в API отправляются только непустые (кроме клички). */
+type NewPetDraft = {
+  name: string;
+  species: string;
+  age: string;
+  description: string;
+  habits: string;
+  vaccinations: string;
+  allergies: string;
+  vetNotes: string;
+};
+
+const EMPTY_NEW_PET_DRAFT: NewPetDraft = {
+  name: '',
+  species: '',
+  age: '',
+  description: '',
+  habits: '',
+  vaccinations: '',
+  allergies: '',
+  vetNotes: '',
+};
+
+function trimmedOrUndefined(s: string): string | undefined {
+  const t = s.trim();
+  return t || undefined;
+}
+
+/** Сбор тела запроса создания: обязательна только кличка. */
+function newPetDraftToCreateBody(d: NewPetDraft): CreatePetBody {
+  return {
+    name: d.name.trim(),
+    species: trimmedOrUndefined(d.species),
+    age: trimmedOrUndefined(d.age),
+    description: trimmedOrUndefined(d.description),
+    habits: trimmedOrUndefined(d.habits),
+    vaccinations: trimmedOrUndefined(d.vaccinations),
+    allergies: trimmedOrUndefined(d.allergies),
+    vetNotes: trimmedOrUndefined(d.vetNotes),
+  };
+}
+
+/** Поле «вид / порода» со встроенным подбором через нативный datalist (без проблем overflow в модалке и карточке). */
+function SpeciesSuggestField({
+  label,
+  optionalHint,
+  value,
+  onChange,
+  disabled,
+}: {
+  label: string;
+  optionalHint?: string;
+  value: string;
+  onChange: (v: string) => void;
+  disabled?: boolean;
+}) {
+  const listId = useId();
+  const inputId = `species-in-${listId}`;
+  const dataListId = `species-dl-${listId}`;
+
+  return (
+    <div>
+      <label className="block text-sm font-medium text-stone-600" htmlFor={inputId}>
+        {label}
+        {optionalHint ? <span className="ml-1 font-normal text-stone-400">({optionalHint})</span> : null}
+      </label>
+      <input
+        id={inputId}
+        list={dataListId}
+        className="mt-1 w-full rounded-xl border border-stone-200 px-3 py-2 text-stone-900 disabled:opacity-50"
+        value={value}
+        disabled={disabled}
+        autoComplete="off"
+        spellCheck={false}
+        aria-autocomplete="list"
+        onChange={(e) => onChange(e.target.value)}
+      />
+      <datalist id={dataListId}>
+        {PET_BREED_SUGGESTIONS_RU.map((item) => (
+          <option key={item} value={item} />
+        ))}
+      </datalist>
+    </div>
+  );
+}
+
+/** Модалка «Новый питомец»: все поля карточки; обязательна только кличка. */
+function AddPetModal({
+  open,
+  draft,
+  onDraftChange,
+  pending,
+  onClose,
+  onSubmit,
+}: {
+  open: boolean;
+  draft: NewPetDraft;
+  onDraftChange: (partial: Partial<NewPetDraft>) => void;
+  pending: boolean;
+  onClose: () => void;
+  onSubmit: () => void;
+}) {
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open, onClose]);
+
+  useEffect(() => {
+    if (!open) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [open]);
+
+  if (!open) return null;
+
+  return createPortal(
+    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 sm:p-6">
+      <button type="button" className="absolute inset-0 bg-stone-900/50 backdrop-blur-[2px]" aria-label="Закрыть" onClick={onClose} />
+      <div
+        className="relative z-[1] flex max-h-[min(90vh,calc(100vh-3rem))] w-full max-w-lg flex-col rounded-2xl border border-stone-200/90 bg-white shadow-2xl shadow-stone-900/20 ring-1 ring-stone-100"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="add-pet-title"
+      >
+        <div className="shrink-0 border-b border-stone-100 px-6 pb-4 pt-6">
+          <h2 id="add-pet-title" className="text-lg font-semibold leading-snug text-stone-900">
+            Новый питомец
+          </h2>
+          <p className="mt-1 text-xs text-stone-500">Обязательна только кличка. Фото добавите на карточке после сохранения.</p>
+        </div>
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-4">
+          <label className="block text-sm">
+            <span className="font-medium text-stone-600">
+              Кличка <span className="text-amber-800">*</span>
+            </span>
+            <input
+              className="mt-1 w-full rounded-xl border border-stone-200 px-3 py-2 text-stone-900 disabled:opacity-50"
+              value={draft.name}
+              disabled={pending}
+              onChange={(e) => onDraftChange({ name: e.target.value })}
+              autoFocus
+            />
+          </label>
+
+          <SpeciesSuggestField
+            label="Вид / порода"
+            optionalHint="необязательно"
+            value={draft.species}
+            disabled={pending}
+            onChange={(species) => onDraftChange({ species })}
+          />
+
+          <label className="block text-sm">
+            <span className="font-medium text-stone-600">
+              Возраст <span className="font-normal text-stone-400">(необязательно)</span>
+            </span>
+            <input
+              className="mt-1 w-full rounded-xl border border-stone-200 px-3 py-2 text-stone-900 disabled:opacity-50"
+              placeholder="Например: 3 года, 8 месяцев"
+              value={draft.age}
+              disabled={pending}
+              onChange={(e) => onDraftChange({ age: e.target.value })}
+            />
+          </label>
+
+          <label className="block text-sm">
+            <span className="font-medium text-stone-600">
+              Описание <span className="font-normal text-stone-400">(необязательно)</span>
+            </span>
+            <textarea
+              className="mt-1 min-h-[72px] w-full rounded-xl border border-stone-200 px-3 py-2 text-stone-900 disabled:opacity-50"
+              value={draft.description}
+              disabled={pending}
+              onChange={(e) => onDraftChange({ description: e.target.value })}
+            />
+          </label>
+
+          <label className="block text-sm">
+            <span className="font-medium text-stone-600">
+              Привычки <span className="font-normal text-stone-400">(необязательно)</span>
+            </span>
+            <textarea
+              className="mt-1 min-h-[72px] w-full rounded-xl border border-stone-200 px-3 py-2 text-stone-900 disabled:opacity-50"
+              value={draft.habits}
+              disabled={pending}
+              onChange={(e) => onDraftChange({ habits: e.target.value })}
+            />
+          </label>
+
+          <label className="block text-sm">
+            <span className="font-medium text-stone-600">
+              Прививки <span className="font-normal text-stone-400">(необязательно)</span>
+            </span>
+            <textarea
+              className="mt-1 min-h-[72px] w-full rounded-xl border border-stone-200 px-3 py-2 text-stone-900 disabled:opacity-50"
+              value={draft.vaccinations}
+              disabled={pending}
+              onChange={(e) => onDraftChange({ vaccinations: e.target.value })}
+            />
+          </label>
+
+          <label className="block text-sm">
+            <span className="font-medium text-stone-600">
+              Аллергии <span className="font-normal text-stone-400">(необязательно)</span>
+            </span>
+            <textarea
+              className="mt-1 min-h-[72px] w-full rounded-xl border border-stone-200 px-3 py-2 text-stone-900 disabled:opacity-50"
+              value={draft.allergies}
+              disabled={pending}
+              onChange={(e) => onDraftChange({ allergies: e.target.value })}
+            />
+          </label>
+
+          <label className="block text-sm">
+            <span className="font-medium text-stone-600">
+              Заметки ветеринара <span className="font-normal text-stone-400">(необязательно)</span>
+            </span>
+            <textarea
+              className="mt-1 min-h-[72px] w-full rounded-xl border border-stone-200 px-3 py-2 text-stone-900 disabled:opacity-50"
+              value={draft.vetNotes}
+              disabled={pending}
+              onChange={(e) => onDraftChange({ vetNotes: e.target.value })}
+            />
+          </label>
+        </div>
+        <div className="flex shrink-0 flex-col-reverse gap-2 border-t border-stone-100 px-6 pb-6 pt-4 sm:flex-row sm:justify-end">
+          <Button variant="secondary" type="button" className="w-full sm:w-auto" disabled={pending} onClick={onClose}>
+            Отмена
+          </Button>
+          <Button variant="primary" type="button" className="w-full sm:w-auto" disabled={pending || !draft.name.trim()} onClick={onSubmit}>
+            {pending ? 'Добавление…' : 'Добавить'}
+          </Button>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+/**
+ * Крупное фото питомца; при редактировании — тот же паттерн overlay, что у аватара профиля.
+ */
+function PetPhotoBlock({
+  avatarUrl,
+  petName,
+  mediaAuthFallback,
+  editable,
+  uploading,
+  deleting,
+  onFileSelected,
+  onDeleteRequest,
+}: {
+  avatarUrl?: string | null;
+  petName: string;
+  mediaAuthFallback: boolean;
+  editable: boolean;
+  uploading: boolean;
+  deleting: boolean;
+  onFileSelected: (file: File) => void;
+  onDeleteRequest: () => void;
+}) {
+  const inputId = useId();
+  const hasAvatar = Boolean(avatarUrl?.trim());
+
+  return (
+    <div
+      className={`relative aspect-[4/3] w-full shrink-0 overflow-hidden bg-stone-100 ring-1 ring-stone-200 ${editable ? 'group rounded-t-2xl' : 'rounded-t-2xl'}`}
+    >
+      <div className="absolute inset-0">
+        {hasAvatar ? (
+          <AuthAwareImg
+            src={avatarUrl!}
+            alt={petName}
+            className="h-full w-full object-cover object-center"
+            mediaAuthFallback={mediaAuthFallback}
+            draggable={false}
+          />
+        ) : (
+          <div className="flex h-full w-full flex-col items-center justify-center gap-2 bg-gradient-to-br from-amber-50 via-stone-50 to-orange-50/70">
+            <span className="text-7xl font-bold text-stone-300/90" aria-hidden>
+              {(petName.trim().charAt(0) || '?').toUpperCase()}
+            </span>
+            <span className="sr-only">{petName}</span>
+          </div>
+        )}
+      </div>
+      {editable ? (
+        <div
+          className="pointer-events-none absolute inset-0 z-[1] flex flex-col items-center justify-center gap-2 rounded-t-2xl bg-stone-900/70 px-4 py-6 text-center opacity-0 transition-opacity duration-200 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100"
+          role="group"
+          aria-label="Действия с фото питомца"
+        >
+          <label
+            htmlFor={inputId}
+            className={`pointer-events-auto cursor-pointer rounded-lg bg-white px-3 py-1.5 text-xs font-semibold leading-tight text-stone-900 shadow-sm hover:bg-stone-100 ${uploading ? 'opacity-70' : ''}`}
+          >
+            {uploading ? 'Загрузка…' : 'Загрузить изображение'}
+          </label>
+          <input
+            id={inputId}
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            className="sr-only"
+            disabled={uploading}
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              e.target.value = '';
+              if (f) onFileSelected(f);
+            }}
+          />
+          <button
+            type="button"
+            disabled={deleting || !hasAvatar}
+            className="pointer-events-auto rounded-lg px-3 py-1 text-xs font-semibold leading-tight text-white underline decoration-white/70 underline-offset-2 hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-40 disabled:no-underline"
+            onClick={onDeleteRequest}
+          >
+            {deleting ? 'Удаление…' : 'Удалить'}
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 /**
@@ -268,8 +601,9 @@ export function ProfilePage() {
     displayName: string;
     bio: string;
   } | null>(null);
-  const [newPetName, setNewPetName] = useState('');
-  const [newPetSpecies, setNewPetSpecies] = useState('');
+  const [newPetDraft, setNewPetDraft] = useState<NewPetDraft>(() => ({ ...EMPTY_NEW_PET_DRAFT }));
+  /** Модальное окно с формой «Новый питомец» (вместо карточки на странице). */
+  const [addPetModalOpen, setAddPetModalOpen] = useState(false);
   const [editingPetId, setEditingPetId] = useState<string | null>(null);
   /** Режим правления полей профиля (по умолчанию — только просмотр). */
   const [editingProfile, setEditingProfile] = useState(false);
@@ -359,8 +693,8 @@ export function ProfilePage() {
     mutationFn: createMyPet,
     onSuccess: () => {
       clearModal();
-      setNewPetName('');
-      setNewPetSpecies('');
+      setAddPetModalOpen(false);
+      setNewPetDraft({ ...EMPTY_NEW_PET_DRAFT });
       invalidateMine();
     },
     onError: (e: unknown) => showError(getApiErrorMessage(e)),
@@ -664,6 +998,18 @@ export function ProfilePage() {
         okLabel="Понятно"
       />
 
+      <AddPetModal
+        open={addPetModalOpen}
+        draft={newPetDraft}
+        onDraftChange={(partial) => setNewPetDraft((d) => ({ ...d, ...partial }))}
+        pending={createPetMut.isPending}
+        onClose={() => {
+          setAddPetModalOpen(false);
+          setNewPetDraft({ ...EMPTY_NEW_PET_DRAFT });
+        }}
+        onSubmit={() => createPetMut.mutate(newPetDraftToCreateBody(newPetDraft))}
+      />
+
       <div className="flex flex-col gap-6 sm:flex-row sm:items-start">
         <div className="flex flex-col items-start gap-2">
           {isMineRoute && !mocks ? (
@@ -845,58 +1191,43 @@ export function ProfilePage() {
       ) : null}
 
       {tab === 'pets' && showPets ? (
-        <div className="space-y-4">
-          {isMineRoute && !mocks ? (
-            <Card className="space-y-3">
-              <h3 className="font-semibold text-stone-900">Новый питомец</h3>
-              <div className="grid gap-2 sm:grid-cols-2">
-                <label className="text-sm">
-                  <span className="text-stone-600">Кличка *</span>
-                  <input
-                    className="mt-1 w-full rounded-xl border border-stone-200 px-3 py-2"
-                    value={newPetName}
-                    onChange={(e) => setNewPetName(e.target.value)}
-                  />
-                </label>
-                <label className="text-sm">
-                  <span className="text-stone-600">Вид / порода</span>
-                  <input
-                    className="mt-1 w-full rounded-xl border border-stone-200 px-3 py-2"
-                    value={newPetSpecies}
-                    onChange={(e) => setNewPetSpecies(e.target.value)}
-                  />
-                </label>
-              </div>
-              <Button
-                variant="primary"
-                type="button"
-                disabled={createPetMut.isPending || !newPetName.trim()}
-                onClick={() =>
-                  createPetMut.mutate({
-                    name: newPetName.trim(),
-                    species: newPetSpecies.trim() || undefined,
-                  })
-                }
-              >
-                Добавить
-              </Button>
-            </Card>
-          ) : null}
+        <div className="space-y-8">
           {petsQuery.isPending ? <p className="text-stone-600">Загрузка карточек…</p> : null}
-          {pets.length === 0 ? (
+
+          {isMineRoute && !mocks && !petsQuery.isPending ? (
+            pets.length === 0 ? (
+              <div className="flex min-h-[min(360px,calc(100vh-12rem))] items-center justify-center px-4">
+                <Button variant="primary" type="button" className="min-h-[48px] px-10 py-3 text-base" onClick={() => setAddPetModalOpen(true)}>
+                  Добавить питомца
+                </Button>
+              </div>
+            ) : (
+              <div className="flex justify-end">
+                <Button variant="primary" type="button" disabled={createPetMut.isPending} onClick={() => setAddPetModalOpen(true)}>
+                  Добавить питомца
+                </Button>
+              </div>
+            )
+          ) : null}
+
+          {pets.length === 0 && !(isMineRoute && !mocks && !petsQuery.isPending) ? (
             <Card>
               <p className="text-stone-600">
                 {isMineRoute ? 'Пока нет карточек питомцев — добавьте первую.' : 'Пока нет карточек питомцев.'}
               </p>
             </Card>
-          ) : (
-            <ul className="grid gap-4 md:grid-cols-2">
+          ) : null}
+
+          {pets.length > 0 ? (
+            <ul className="mx-auto grid max-w-[68rem] gap-10 sm:gap-12 lg:grid-cols-2">
               {pets.map((pet) => (
                 <li key={pet.id}>
                   <PetCardBlock
                     pet={pet}
                     canManage={isMineRoute && !mocks}
                     mediaAuthFallback={!mocks}
+                    avatarUploadBusy={uploadPetAvatarMut.isPending && uploadPetAvatarMut.variables?.id === pet.id}
+                    avatarDeleteBusy={deletePetAvatarMut.isPending && deletePetAvatarMut.variables === pet.id}
                     editing={editingPetId === pet.id}
                     onToggleEdit={() => setEditingPetId((id) => (id === pet.id ? null : pet.id))}
                     onSave={(body) => updatePetMut.mutate({ id: pet.id, body })}
@@ -919,12 +1250,12 @@ export function ProfilePage() {
                         onConfirm: () => deletePetAvatarMut.mutate(pet.id),
                       })
                     }
-                    busy={updatePetMut.isPending || deletePetMut.isPending || uploadPetAvatarMut.isPending || deletePetAvatarMut.isPending}
+                    busy={updatePetMut.isPending || deletePetMut.isPending}
                   />
                 </li>
               ))}
             </ul>
-          )}
+          ) : null}
         </div>
       ) : null}
 
@@ -1083,6 +1414,8 @@ function PetCardBlock({
   pet,
   canManage,
   mediaAuthFallback,
+  avatarUploadBusy,
+  avatarDeleteBusy,
   editing,
   onToggleEdit,
   onSave,
@@ -1094,6 +1427,8 @@ function PetCardBlock({
   pet: PetCard;
   canManage: boolean;
   mediaAuthFallback: boolean;
+  avatarUploadBusy: boolean;
+  avatarDeleteBusy: boolean;
   editing: boolean;
   onToggleEdit: () => void;
   onSave: (body: UpdatePetBody) => void;
@@ -1104,6 +1439,7 @@ function PetCardBlock({
 }) {
   const [name, setName] = useState(pet.name);
   const [species, setSpecies] = useState(pet.species);
+  const [age, setAge] = useState(() => pet.age ?? '');
   const [description, setDescription] = useState(pet.description);
   const [habits, setHabits] = useState(pet.habits);
   const [vaccinations, setVaccinations] = useState(pet.vaccinations);
@@ -1113,6 +1449,7 @@ function PetCardBlock({
   useEffect(() => {
     setName(pet.name);
     setSpecies(pet.species);
+    setAge(pet.age ?? '');
     setDescription(pet.description);
     setHabits(pet.habits);
     setVaccinations(pet.vaccinations);
@@ -1121,44 +1458,48 @@ function PetCardBlock({
   }, [pet]);
 
   return (
-    <Card className="h-full space-y-3">
-      <div className="flex gap-3">
-        <Avatar src={pet.avatarUrl} alt={pet.name} size="md" mediaAuthFallback={mediaAuthFallback} />
-        <div className="min-w-0 flex-1">
-          <h3 className="text-lg font-semibold text-stone-900">{pet.name}</h3>
-          <p className="text-sm text-stone-500">{pet.species}</p>
+    <Card className="flex h-full flex-col p-0 shadow-lg shadow-stone-400/20 ring-stone-200/80 hover:shadow-xl">
+      <PetPhotoBlock
+        avatarUrl={pet.avatarUrl}
+        petName={pet.name}
+        mediaAuthFallback={mediaAuthFallback}
+        editable={canManage}
+        uploading={avatarUploadBusy}
+        deleting={avatarDeleteBusy}
+        onFileSelected={onUploadPhoto}
+        onDeleteRequest={onRemovePhoto}
+      />
+      <div className="flex flex-col gap-3 p-6 sm:p-7">
+        <div className="min-w-0">
+          <h3 className="text-xl font-semibold text-stone-900 sm:text-2xl">{pet.name}</h3>
+          <div className="mt-1 space-y-0.5 text-base text-stone-500">
+            {pet.species.trim() ? <p>{pet.species}</p> : null}
+            {pet.age.trim() ? <p className="text-stone-600">Возраст: {pet.age}</p> : null}
+          </div>
           {canManage ? (
-            <div className="mt-2 flex flex-wrap gap-2">
-              <label className="cursor-pointer text-xs font-semibold text-amber-800 underline">
-                Фото
-                <input
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp"
-                  className="sr-only"
-                  onChange={(e) => {
-                    const f = e.target.files?.[0];
-                    e.target.value = '';
-                    if (f) onUploadPhoto(f);
-                  }}
-                />
-              </label>
-              <button type="button" className="text-xs font-semibold text-stone-600 underline" onClick={onRemovePhoto}>
-                Убрать фото
-              </button>
-              <button type="button" className="text-xs font-semibold text-stone-600 underline" onClick={onToggleEdit}>
+            <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2">
+              <button type="button" className="text-sm font-semibold text-stone-600 underline decoration-stone-300" onClick={onToggleEdit}>
                 {editing ? 'Закрыть' : 'Править'}
               </button>
-              <button type="button" className="text-xs font-semibold text-red-700 underline" onClick={onDelete}>
+              <button type="button" className="text-sm font-semibold text-red-700 underline decoration-red-200" onClick={onDelete}>
                 Удалить
               </button>
             </div>
           ) : null}
         </div>
-      </div>
       {editing && canManage ? (
         <div className="space-y-2 border-t border-stone-100 pt-3 text-sm">
-          <input className="w-full rounded-lg border border-stone-200 px-2 py-1.5" value={name} onChange={(e) => setName(e.target.value)} placeholder="Кличка" />
-          <input className="w-full rounded-lg border border-stone-200 px-2 py-1.5" value={species} onChange={(e) => setSpecies(e.target.value)} placeholder="Вид" />
+          <input className="w-full rounded-lg border border-stone-200 px-2 py-1.5" value={name} onChange={(e) => setName(e.target.value)} placeholder="Кличка *" />
+          <SpeciesSuggestField label="Вид / порода" optionalHint="необязательно" value={species} disabled={busy} onChange={setSpecies} />
+          <label className="block">
+            <span className="text-stone-600">Возраст (необязательно)</span>
+            <input
+              className="mt-1 w-full rounded-lg border border-stone-200 px-2 py-1.5"
+              value={age}
+              onChange={(e) => setAge(e.target.value)}
+              placeholder="Например: 2 года"
+            />
+          </label>
           <textarea className="w-full rounded-lg border border-stone-200 px-2 py-1.5" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Описание" />
           <textarea className="w-full rounded-lg border border-stone-200 px-2 py-1.5" value={habits} onChange={(e) => setHabits(e.target.value)} placeholder="Привычки" />
           <textarea className="w-full rounded-lg border border-stone-200 px-2 py-1.5" value={vaccinations} onChange={(e) => setVaccinations(e.target.value)} placeholder="Прививки" />
@@ -1171,8 +1512,9 @@ function PetCardBlock({
             onClick={() =>
               onSave({
                 name: name.trim(),
-                species: species.trim() || undefined,
-                description: description.trim() || undefined,
+                species: trimmedOrUndefined(species),
+                age: trimmedOrUndefined(age),
+                description: trimmedOrUndefined(description),
                 habits: habits.trim() || undefined,
                 vaccinations: vaccinations.trim() || undefined,
                 allergies: allergies.trim() || undefined,
@@ -1208,6 +1550,7 @@ function PetCardBlock({
           </dl>
         </>
       )}
+      </div>
     </Card>
   );
 }

@@ -78,3 +78,18 @@ export function userProfileGalleryProxyUrl(
   if (rawUrl) return `${base}?v=${urlVersionHash(rawUrl)}`;
   return base;
 }
+
+/**
+ * URL аватара питомца через прокси API (как у профиля человека).
+ * @param rawUrl оригинальный URL из DTO (cache-busting при замене файла)
+ */
+export function petAvatarProxyUrl(
+  petId: string,
+  apiOrigin: string = getApiBaseUrl(),
+  rawUrl?: string,
+): string {
+  const b = apiOrigin.replace(/\/+$/, '');
+  const base = `${b}/api/v1/pets/${petId}/avatar`;
+  if (rawUrl) return `${base}?v=${urlVersionHash(rawUrl)}`;
+  return base;
+}

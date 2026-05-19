@@ -52,6 +52,7 @@ export const mockPets: Record<string, PetCard[]> = {
       id: 'p1',
       name: 'Арчи',
       species: 'Лабрадор',
+      age: '4 года',
       avatarUrl: ph('photo-1587300003388-59208cc962cb', 400, 400),
       description: 'Дружелюбный, любит воду и длительные прогулки.',
       habits: 'Корм 2 раза в день, после еды отдых 1 час. Не любит одиночество.',

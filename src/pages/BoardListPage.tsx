@@ -10,6 +10,7 @@ import { formatListingPriceShort } from '@/entities/listing/lib/formatListingPri
 import { mockProfiles } from '@/api/mocks/data';
 import { StarsRating } from '@/shared/ui/StarsRating';
 import { Avatar } from '@/shared/ui/Avatar';
+import { AuthAwareImg } from '@/shared/ui/AuthAwareImg';
 
 /** Фильтр списка: все / только исполнители / только заказчики. */
 export type BoardListingFilter = 'all' | 'offer_sitter' | 'need_sitter';
@@ -176,11 +177,12 @@ function ListingRow({ listing }: { listing: Listing }) {
       className="group flex touch-manipulation flex-col gap-3 rounded-2xl border border-stone-200/80 bg-white/90 p-3 shadow-md shadow-stone-400/10 ring-1 ring-stone-100/90 transition-all duration-300 active:scale-[0.99] max-sm:gap-3 sm:flex-row sm:items-stretch sm:gap-5 sm:p-5 sm:active:scale-100 md:hover:-translate-y-0.5 md:hover:border-amber-200/60 md:hover:shadow-lg md:hover:shadow-amber-900/10"
     >
       <div className="relative aspect-[16/10] w-full shrink-0 overflow-hidden rounded-xl sm:aspect-auto sm:h-36 sm:w-44 sm:self-stretch md:w-52">
-        <img
+        <AuthAwareImg
           src={listing.coverImageUrl}
           alt=""
           className="h-full w-full object-cover transition-transform duration-500 ease-out md:group-hover:scale-105"
           loading="lazy"
+          mediaAuthFallback={!isApiMocksMode()}
         />
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/30 to-transparent opacity-0 transition-opacity duration-300 max-md:opacity-100 md:group-hover:opacity-100" />
       </div>

@@ -84,14 +84,14 @@ export function AppLayout() {
           <Link
             to={ROUTES.home}
             className="group relative shrink-0 touch-manipulation self-center sm:self-auto"
-            aria-label="На главную — Счастливый пёсик"
+            aria-label="На главную — Счастливый питомец"
           >
             <span className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0">
               <span className="font-display text-[1.35rem] font-semibold leading-none tracking-tight sm:text-[1.65rem]">
                 <span className="bg-gradient-to-r from-amber-700 via-amber-500 to-rose-600 bg-clip-text text-transparent drop-shadow-[0_1px_0_rgba(255,255,255,0.6)]">
                   Счастливый
                 </span>{' '}
-                <span className="text-stone-800 transition-colors duration-200 group-hover:text-stone-950">пёсик</span>
+                <span className="text-stone-800 transition-colors duration-200 group-hover:text-stone-950">питомец</span>
               </span>
               <span
                 className="inline-block translate-y-px text-lg text-amber-600/90 transition-transform duration-200 group-hover:rotate-[-8deg] sm:text-xl"
@@ -160,7 +160,7 @@ export function AppLayout() {
         <Outlet />
       </main>
       <footer className="app-shell-footer border-t border-stone-200/80 bg-white/60 px-4 py-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] text-center text-xs leading-snug text-stone-500 backdrop-blur-sm sm:text-sm">
-        Счастливый пёсик — пробная версия без бэкенда · данные и чаты хранятся в памяти страницы
+        Счастливый питомец — пробная версия без бэкенда · данные и чаты хранятся в памяти страницы
       </footer>
     </div>
   );
